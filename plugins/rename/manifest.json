@@ -1,0 +1,17 @@
+{
+  "name": "网盘文件批量重命名",
+  "version": "1.0.0",
+  "author": "DriveCat",
+  "description": "支持 8 种规则的网盘文件批量重命名：插入/替换/正则/删除/序号/补零/大小写/日期",
+  "hooks": [
+    "before_rename",
+    "after_rename"
+  ],
+  "permissions": [
+    "drive.list",
+    "drive.rename"
+  ],
+  "source": "official",
+  "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
+  "entry": "main.RenamePlugin"
+}
