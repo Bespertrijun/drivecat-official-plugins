@@ -74,7 +74,6 @@ def build():
 
         # 构建 index 条目
         index_plugins.append({
-            "id": plugin_id,
             "name": manifest["name"],
             "version": version,
             "author": manifest.get("author", ""),

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from pydantic import BaseModel
 
-from .rename_engine import RenameRuleEngine, RuleSpec, create_rule
+from rename_engine import RenameRuleEngine, RuleSpec, create_rule
 
 
 class RenamePreview(BaseModel):
