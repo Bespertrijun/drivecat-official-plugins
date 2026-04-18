@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import subprocess
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,25 @@ def _sign(data: bytes, private_key) -> bytes:
     """对 sha256(data) 做 Ed25519 签名。"""
     digest = hashlib.sha256(data).digest()
     return private_key.sign(digest)
+
+
+def _get_changelog(plugin_dir: Path, max_entries: int = 20) -> str:
+    """从 git log 自动生成 changelog。取该插件目录下最近的 commit 摘要。"""
+    try:
+        result = subprocess.run(
+            ["git", "log", f"--max-count={max_entries}", "--pretty=format:%s",
+             "--", str(plugin_dir)],
+            capture_output=True, text=True, cwd=ROOT,
+            encoding="utf-8", errors="replace",
+        )
+        stdout = result.stdout or ""
+        if result.returncode != 0 or not stdout.strip():
+            return ""
+        lines = stdout.strip().splitlines()
+        return "\n".join(f"- {line}" for line in lines)
+    except FileNotFoundError:
+        # git 不可用
+        return ""
 
 
 def build():
@@ -90,7 +110,7 @@ def build():
             "description": manifest.get("description", ""),
             "source_url": manifest.get("source_url", ""),
             "permissions": manifest.get("permissions", []),
-            "changelog": manifest.get("changelog", ""),
+            "changelog": manifest.get("changelog") or _get_changelog(plugin_dir),
             "download_url": f"packages/{plugin_id}/{version}/plugin.zip",
             "signature_url": sig_url,
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
