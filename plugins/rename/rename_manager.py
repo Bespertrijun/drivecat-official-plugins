@@ -59,15 +59,20 @@ class RenameManager:
             file_ids: 限定文件 ID（None=目录下所有文件）
         """
         rules = [create_rule(spec) for spec in rule_specs]
-        files = await drive.list_files(parent_id)
+        all_files = await drive.list_files(parent_id)
+
+        # 先过滤，再枚举——确保 index 和 total 基于目标集合
+        target_files = (
+            [f for f in all_files if f.id in set(file_ids)]
+            if file_ids
+            else all_files
+        )
 
         previews = []
-        for idx, f in enumerate(files):
-            if file_ids and f.id not in file_ids:
-                continue
-
+        for idx, f in enumerate(target_files):
             new_name = RenameRuleEngine.apply_rules(
-                f.name, rules, index=idx, mtime=getattr(f, "modified_time", None)
+                f.name, rules, index=idx,
+                mtime=getattr(f, "modified_time", None) or getattr(f, "modified_at", None),
             )
 
             previews.append(
@@ -98,17 +103,21 @@ class RenameManager:
             file_ids: 限定文件 ID
         """
         rules = [create_rule(spec) for spec in rule_specs]
-        files = await drive.list_files(parent_id)
+        all_files = await drive.list_files(parent_id)
 
-        result = RenameResult(total=len(files))
+        # 先过滤，再枚举——确保 index 和 total 基于目标集合
+        target_files = (
+            [f for f in all_files if f.id in set(file_ids)]
+            if file_ids
+            else all_files
+        )
 
-        for idx, f in enumerate(files):
-            if file_ids and f.id not in file_ids:
-                result.skipped += 1
-                continue
+        result = RenameResult(total=len(target_files))
 
+        for idx, f in enumerate(target_files):
             new_name = RenameRuleEngine.apply_rules(
-                f.name, rules, index=idx, mtime=getattr(f, "modified_time", None)
+                f.name, rules, index=idx,
+                mtime=getattr(f, "modified_time", None) or getattr(f, "modified_at", None),
             )
 
             if new_name == f.name:
@@ -148,3 +157,4 @@ class RenameManager:
             f"{result.failed} failed, {result.skipped} skipped"
         )
         return result
+

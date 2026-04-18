@@ -3,4 +3,9 @@ __pycache__/
 *.pyc
 .DS_Store
 checkpoint.md
+plugin_gap_analysis.md
 .agents/
+keys/
+
+# build.py --dev 同步的副本（源文件在 plugins/_shared/）
+plugins/*/\_shared/

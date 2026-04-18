@@ -13,5 +13,17 @@
   ],
   "source": "official",
   "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
-  "entry": "main.RenamePlugin"
+  "changelog": "v1.0.0: 初始版本，支持 8 种重命名规则 + iframe UI",
+  "entry": "main.RenamePlugin",
+  "ui": {
+    "mode": "iframe",
+    "entry": "ui/index.html",
+    "hooks": [
+      {
+        "position": "file.context_menu",
+        "label": "批量重命名",
+        "icon": "CreateOutline"
+      }
+    ]
+  }
 }

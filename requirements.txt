@@ -1,0 +1,9 @@
+# DriveCat Official Plugins — 开发依赖
+#
+# 运行时依赖（由 DriveCat 宿主提供，此处仅作开发及测试引用）：
+fastapi>=0.100
+pydantic>=2.0
+loguru>=0.7
+
+# 构建 & 签名
+cryptography>=41.0

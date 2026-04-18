@@ -39,18 +39,15 @@ class RenamePlugin(PluginInterface):
 
     def __init__(self):
         self._context: Optional[PluginContext] = None
+        # 从 manifest.json 读取元数据，消除双份真相源
+        manifest_path = Path(__file__).parent / "manifest.json"
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            import json
+            data = json.load(f)
+        self._meta = PluginMeta(**data)
 
     def get_meta(self) -> PluginMeta:
-        return PluginMeta(
-            name="网盘文件批量重命名",
-            version="1.0.0",
-            author="DriveCat",
-            description="支持 8 种规则的网盘文件批量重命名",
-            hooks=["before_rename", "after_rename"],
-            permissions=["drive.list", "drive.rename"],
-            source="official",
-            entry="main.RenamePlugin",
-        )
+        return self._meta
 
     async def on_load(self, context: PluginContext) -> None:
         self._context = context

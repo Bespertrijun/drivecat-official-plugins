@@ -5,6 +5,7 @@
 import hashlib
 import json
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,9 +58,18 @@ def build():
         zip_path = pkg_dir / "plugin.zip"
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # 打包插件自身文件（排除 _shared/ dev 副本，由下方统一注入）
             for file in plugin_dir.rglob("*"):
-                if file.is_file() and "__pycache__" not in str(file):
-                    zf.write(file, file.relative_to(plugin_dir))
+                rel = file.relative_to(plugin_dir)
+                if file.is_file() and "__pycache__" not in rel.parts and "_shared" not in rel.parts:
+                    zf.write(file, rel)
+
+            # 打包 _shared/ 共享资源（如 sdk.js），使 ui/ 中的相对引用能解析
+            shared_dir = PLUGINS_DIR / "_shared"
+            if shared_dir.exists():
+                for file in shared_dir.rglob("*"):
+                    if file.is_file():
+                        zf.write(file, Path("_shared") / file.relative_to(shared_dir))
 
         # 签名
         sig_url = ""
@@ -78,11 +88,12 @@ def build():
             "version": version,
             "author": manifest.get("author", ""),
             "description": manifest.get("description", ""),
-            "category": manifest.get("category", ""),
+            "source_url": manifest.get("source_url", ""),
             "permissions": manifest.get("permissions", []),
+            "changelog": manifest.get("changelog", ""),
             "download_url": f"packages/{plugin_id}/{version}/plugin.zip",
             "signature_url": sig_url,
-            "updated_at": "",
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
 
     # 写 index.json
@@ -94,5 +105,33 @@ def build():
     print(f"\n Built {len(index_plugins)} plugin(s) -> {DIST_DIR}")
 
 
+def dev_sync():
+    """将 _shared/ 复制到每个插件目录，使本地开发时相对路径可用。"""
+    import shutil
+
+    shared_dir = PLUGINS_DIR / "_shared"
+    if not shared_dir.exists():
+        print("  _shared/ not found, nothing to sync")
+        return
+
+    synced = 0
+    for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
+        if not (plugin_dir / "manifest.json").exists():
+            continue
+
+        target = plugin_dir / "_shared"
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(shared_dir, target)
+        synced += 1
+
+    print(f"\n Synced _shared/ -> {synced} plugin(s)")
+
+
 if __name__ == "__main__":
-    build()
+    import sys
+
+    if "--dev" in sys.argv:
+        dev_sync()
+    else:
+        build()
