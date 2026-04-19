@@ -102,8 +102,21 @@ def build():
         else:
             print(f"  [no-sig] {plugin_id} v{version}")
 
+        # 图标
+        icon_url = ""
+        icon_field = manifest.get("icon", "")
+        if icon_field:
+            icon_src = plugin_dir / icon_field
+            if icon_src.exists():
+                icon_dest_dir = DIST_DIR / "packages" / plugin_id
+                icon_dest = icon_dest_dir / icon_src.name
+                import shutil
+                shutil.copy2(icon_src, icon_dest)
+                icon_url = f"packages/{plugin_id}/{icon_src.name}"
+                print(f"  [icon]   {plugin_id} → {icon_url}")
+
         # 构建 index 条目
-        index_plugins.append({
+        entry = {
             "name": manifest["name"],
             "version": version,
             "author": manifest.get("author", ""),
@@ -114,7 +127,10 @@ def build():
             "download_url": f"packages/{plugin_id}/{version}/plugin.zip",
             "signature_url": sig_url,
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        })
+        }
+        if icon_url:
+            entry["icon_url"] = icon_url
+        index_plugins.append(entry)
 
     # 写 index.json
     index = {"plugins": index_plugins}
