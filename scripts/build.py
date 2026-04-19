@@ -37,6 +37,72 @@ def _sign(data: bytes, private_key) -> bytes:
     return private_key.sign(digest)
 
 
+def _git_commit_count(plugin_dir: Path) -> int:
+    """统计 version.py 上次修改以来，该插件目录的 commit 次数。
+
+    这确保了 major.minor 变更后 patch 从 0 开始。
+    """
+    try:
+        version_file = plugin_dir / "version.py"
+
+        # 找到 version.py 最后一次修改的 commit hash
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H", "--", str(version_file)],
+            capture_output=True, text=True, cwd=ROOT,
+            encoding="utf-8", errors="replace",
+        )
+        last_ver_hash = (result.stdout or "").strip()
+
+        if not last_ver_hash:
+            # version.py 还没有被 commit 过，计算全量
+            result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD", "--", str(plugin_dir)],
+                capture_output=True, text=True, cwd=ROOT,
+                encoding="utf-8", errors="replace",
+            )
+            stdout = (result.stdout or "").strip()
+            return int(stdout) if stdout.isdigit() else 0
+
+        # 计算自 version.py 最后修改以来的 commit 数（不含那次本身）
+        result = subprocess.run(
+            ["git", "rev-list", "--count", f"{last_ver_hash}..HEAD",
+             "--", str(plugin_dir)],
+            capture_output=True, text=True, cwd=ROOT,
+            encoding="utf-8", errors="replace",
+        )
+        stdout = (result.stdout or "").strip()
+        return int(stdout) if stdout.isdigit() else 0
+
+    except FileNotFoundError:
+        pass
+    return 0
+
+
+def _read_version_py(plugin_dir: Path) -> str:
+    """从 version.py 读取 __version__ 值。"""
+    import re
+    version_file = plugin_dir / "version.py"
+    if not version_file.exists():
+        return "0.0"
+    content = version_file.read_text(encoding="utf-8")
+    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+    return match.group(1) if match else "0.0"
+
+
+def _compute_version(base_version: str, plugin_dir: Path) -> str:
+    """
+    自动计算版本号。
+
+    version.py 中写 major.minor（如 '1.0'），patch 由 git commit 数量自动生成。
+    如果已经是完整的 major.minor.patch 格式，则保留手写值。
+    """
+    parts = base_version.split(".")
+    if len(parts) >= 3:
+        return base_version
+    patch = _git_commit_count(plugin_dir)
+    return f"{base_version}.{patch}"
+
+
 def _get_changelog(plugin_dir: Path, max_entries: int = 20) -> str:
     """从 git log 自动生成 changelog。取该插件目录下最近的 commit 摘要。"""
     try:
@@ -70,19 +136,26 @@ def build():
             manifest = json.load(f)
 
         plugin_id = plugin_dir.name
-        version = manifest["version"]
+        base_version = _read_version_py(plugin_dir)
+        version = _compute_version(base_version, plugin_dir)
 
         # 打 zip
         pkg_dir = DIST_DIR / "packages" / plugin_id / version
         pkg_dir.mkdir(parents=True, exist_ok=True)
         zip_path = pkg_dir / "plugin.zip"
 
+        # 写入 zip 的 manifest 使用计算后的版本号
+        build_manifest = {**manifest, "version": version}
+
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 打包插件自身文件（排除 _shared/ dev 副本，由下方统一注入）
+            # 打包插件自身文件（排除 _shared/ dev 副本和原始 manifest）
             for file in plugin_dir.rglob("*"):
                 rel = file.relative_to(plugin_dir)
-                if file.is_file() and "__pycache__" not in rel.parts and "_shared" not in rel.parts:
+                if file.is_file() and "__pycache__" not in rel.parts and "_shared" not in rel.parts and rel.name != "manifest.json":
                     zf.write(file, rel)
+
+            # 写入版本号已更新的 manifest.json
+            zf.writestr("manifest.json", json.dumps(build_manifest, ensure_ascii=False, indent=2))
 
             # 打包 _shared/ 共享资源（如 sdk.js），使 ui/ 中的相对引用能解析
             shared_dir = PLUGINS_DIR / "_shared"

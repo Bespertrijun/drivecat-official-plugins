@@ -9,7 +9,8 @@ plugins/
   _shared/               ← 共享资源
     sdk.js               ← 插件 UI 通信 SDK
   rename/                ← 示例：批量重命名插件
-    manifest.json        ← 插件清单
+    manifest.json        ← 插件清单（不含 version）
+    version.py           ← 版本号（如 __version__ = "1.0"）
     main.py              ← 入口（实现 PluginInterface）
     rename_engine.py     ← 业务逻辑
     rename_manager.py
@@ -41,17 +42,17 @@ plugins/
 ```json
 {
   "name": "我的插件",
-  "version": "1.0.0",
   "author": "YourName",
   "description": "插件功能描述",
   "hooks": ["before_rename", "after_rename"],
   "permissions": ["drive.list", "drive.rename"],
   "source": "official",
   "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
-  "changelog": "v1.0.0: 初始版本",
   "entry": "main.MyPlugin"
 }
 ```
+
+> **注意**：`version` 和 `changelog` 不要写在 manifest.json 里，由 `build.py` 自动生成。版本号写在 `version.py` 中。
 
 **字段说明：**
 
@@ -522,4 +523,39 @@ python scripts/build.py --dev
 
 构建后提交并推送，GitHub Pages 自动部署。
 
-> **注意**：`--dev` 生成的 `plugins/*/\_shared/` 副本已被 `.gitignore` 忽略，不会进入版本控制。
+> **注意**：`--dev` 生成的 `plugins/*/_shared/` 副本已被 `.gitignore` 忽略，不会进入版本控制。
+
+### 版本号自动生成
+
+每个插件目录下创建 `version.py`，写入基础版本号：
+
+```python
+__version__ = "1.0"
+```
+
+`build.py` 自动读取 `version.py`，追加 patch 号（= `version.py` 最后修改以来该插件目录的 commit 数）：
+
+| 操作 | 版本 |
+|------|------|
+| 创建 `version.py` 写 `"1.0"`，提交 | `1.0.0` |
+| 之后又提交了 3 次 | `1.0.3` |
+| 改 `version.py` 为 `"1.1"`，提交 | `1.1.0` ← 归零 |
+| 之后又提交了 2 次 | `1.1.2` |
+
+**日常开发**：只维护 `version.py` 里的 `major.minor`，patch 随每次提交自动递增。修改 `version.py` 后 patch 自动归零。
+
+构建时 zip 包内的 `manifest.json` 会被自动写入完整版本号（如 `1.0.5`），运行时 `get_meta()` 返回的版本与市场一致。
+
+### Changelog 自动生成
+
+`build.py` 的 changelog 生成逻辑：
+
+1. 如果 `manifest.json` 中有 `"changelog"` 字段且不为空 → **使用手写值**（手动 override）
+2. 否则 → **自动从 git log 生成**，取该插件目录下最近 20 条 commit 的摘要
+
+自动生成的格式：
+```
+- feat: implement rename plugin with UI
+- fix: 修复字段不一致
+- refactor: 清理冗余代码
+```
