@@ -6,6 +6,7 @@
     例：rename/v1.0.0, rename/v1.0.1
   - 没有 tag 时默认 0.0.0
   - 多版本保留：dist/packages/{id}/{version}/plugin.zip
+  - 历史版本通过 git archive 从对应 tag 重建，保证回退到任意旧版可用
 
 Changelog 策略：
   1. manifest.json 中手写 changelog → 最高优先级
@@ -14,8 +15,10 @@ Changelog 策略：
 """
 
 import hashlib
+import io
 import json
 import subprocess
+import tarfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,6 +162,87 @@ def _git_log_range(
         return ""
 
 
+# ── 从 git tag 重建 zip ──
+
+
+_SKIP_PARTS = {"__pycache__", "_shared", ".git"}
+
+
+def _pack_zip_for_tag(plugin_id: str, version: str, tag_name: str, pkg_dir: Path) -> Optional[Path]:
+    """
+    从 git tag 抽取插件代码 + _shared 共享资源，打包成 plugin.zip。
+
+    使用 git archive，不污染工作树。manifest.json 的 version 字段被注入为 tag 版本号。
+    返回生成的 zip 路径；失败返回 None。
+    """
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = pkg_dir / "plugin.zip"
+
+    plugin_archive = subprocess.run(
+        ["git", "archive", "--format=tar", tag_name, "--", f"plugins/{plugin_id}/"],
+        capture_output=True, cwd=ROOT,
+    )
+    if plugin_archive.returncode != 0 or not plugin_archive.stdout:
+        return None
+
+    manifest_blob = subprocess.run(
+        ["git", "show", f"{tag_name}:plugins/{plugin_id}/manifest.json"],
+        capture_output=True, cwd=ROOT,
+    )
+    if manifest_blob.returncode != 0:
+        return None
+    manifest = json.loads(manifest_blob.stdout.decode("utf-8"))
+    build_manifest = {**manifest, "version": version}
+
+    # _shared 在该 tag 时可能不存在，失败容忍
+    shared_archive = subprocess.run(
+        ["git", "archive", "--format=tar", tag_name, "--", "plugins/_shared/"],
+        capture_output=True, cwd=ROOT,
+    )
+
+    plugin_prefix = f"plugins/{plugin_id}/"
+    shared_prefix = "plugins/_shared/"
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 插件文件
+        with tarfile.open(fileobj=io.BytesIO(plugin_archive.stdout), mode="r") as tar:
+            for m in tar.getmembers():
+                if not m.isfile() or not m.name.startswith(plugin_prefix):
+                    continue
+                rel = m.name[len(plugin_prefix):]
+                if not rel or rel == "manifest.json":
+                    continue
+                if any(p in _SKIP_PARTS for p in Path(rel).parts):
+                    continue
+                f = tar.extractfile(m)
+                if f is not None:
+                    zf.writestr(rel, f.read())
+
+        # 注入版本号的 manifest
+        zf.writestr(
+            "manifest.json",
+            json.dumps(build_manifest, ensure_ascii=False, indent=2),
+        )
+
+        # _shared/ 共享资源
+        if shared_archive.returncode == 0 and shared_archive.stdout:
+            try:
+                with tarfile.open(fileobj=io.BytesIO(shared_archive.stdout), mode="r") as tar:
+                    for m in tar.getmembers():
+                        if not m.isfile() or not m.name.startswith(shared_prefix):
+                            continue
+                        rel = m.name[len(shared_prefix):]
+                        if not rel:
+                            continue
+                        f = tar.extractfile(m)
+                        if f is not None:
+                            zf.writestr(f"_shared/{rel}", f.read())
+            except tarfile.ReadError:
+                pass
+
+    return zip_path
+
+
 # ── 构建 ──
 
 
@@ -176,56 +260,45 @@ def build():
             manifest = json.load(f)
 
         plugin_id = plugin_dir.name
-        version = _get_latest_version(plugin_id)
+        all_versions = _get_all_versions(plugin_id)
 
-        if version == "0.0.0":
+        if not all_versions:
             print(f"  [skip]   {plugin_id} — no tag found (create one: git tag {plugin_id}/v1.0.0)")
             continue
 
-        # 打 zip
-        pkg_dir = DIST_DIR / "packages" / plugin_id / version
-        pkg_dir.mkdir(parents=True, exist_ok=True)
-        zip_path = pkg_dir / "plugin.zip"
+        # 为每个版本（包括历史）从对应 tag 构建 zip
+        signed_versions = set()
+        for v in all_versions:
+            tag_name = f"{plugin_id}/v{v}"
+            pkg_dir = DIST_DIR / "packages" / plugin_id / v
+            zip_path = _pack_zip_for_tag(plugin_id, v, tag_name, pkg_dir)
+            if zip_path is None:
+                print(f"  [fail]   {plugin_id} v{v} — git archive failed")
+                continue
 
-        # 写入 zip 的 manifest 使用 tag 版本号
-        build_manifest = {**manifest, "version": version}
+            if private_key:
+                sig = _sign(zip_path.read_bytes(), private_key)
+                (pkg_dir / "plugin.sig").write_bytes(sig)
+                signed_versions.add(v)
+                print(f"  [signed] {plugin_id} v{v}")
+            else:
+                print(f"  [no-sig] {plugin_id} v{v}")
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 打包插件自身文件（排除 _shared/ dev 副本和原始 manifest）
-            for file in plugin_dir.rglob("*"):
-                rel = file.relative_to(plugin_dir)
-                skip_parts = {"__pycache__", "_shared", ".git"}
-                if file.is_file() and not skip_parts.intersection(rel.parts) and rel.name != "manifest.json":
-                    zf.write(file, rel)
+        latest_version = all_versions[0]
+        sig_url = (
+            f"packages/{plugin_id}/{latest_version}/plugin.sig"
+            if latest_version in signed_versions
+            else ""
+        )
 
-            # 写入版本号已更新的 manifest.json
-            zf.writestr("manifest.json", json.dumps(build_manifest, ensure_ascii=False, indent=2))
-
-            # 打包 _shared/ 共享资源（如 sdk.js），使 ui/ 中的相对引用能解析
-            shared_dir = PLUGINS_DIR / "_shared"
-            if shared_dir.exists():
-                for file in shared_dir.rglob("*"):
-                    if file.is_file():
-                        zf.write(file, Path("_shared") / file.relative_to(shared_dir))
-
-        # 签名
-        sig_url = ""
-        if private_key:
-            sig = _sign(zip_path.read_bytes(), private_key)
-            sig_path = pkg_dir / "plugin.sig"
-            sig_path.write_bytes(sig)
-            sig_url = f"packages/{plugin_id}/{version}/plugin.sig"
-            print(f"  [signed] {plugin_id} v{version}")
-        else:
-            print(f"  [no-sig] {plugin_id} v{version}")
-
-        # 图标
+        # 图标（取工作树最新文件，不区分版本）
         icon_url = ""
         icon_field = manifest.get("icon", "")
         if icon_field:
             icon_src = plugin_dir / icon_field
             if icon_src.exists():
                 icon_dest_dir = DIST_DIR / "packages" / plugin_id
+                icon_dest_dir.mkdir(parents=True, exist_ok=True)
                 icon_dest = icon_dest_dir / icon_src.name
                 import shutil
                 shutil.copy2(icon_src, icon_dest)
@@ -235,32 +308,35 @@ def build():
         # changelog: manifest 手写优先，否则从 tag 间 git log 自动生成
         changelog = manifest.get("changelog") or _get_changelog(plugin_id, plugin_dir)
 
-        # 构建 index 条目
+        # 构建 index 条目（指向最新版本）
         entry = {
             "name": manifest["name"],
-            "version": version,
+            "version": latest_version,
             "author": manifest.get("author", ""),
             "description": manifest.get("description", ""),
             "source_url": manifest.get("source_url", ""),
             "permissions": manifest.get("permissions", []),
             "changelog": changelog,
-            "download_url": f"packages/{plugin_id}/{version}/plugin.zip",
+            "download_url": f"packages/{plugin_id}/{latest_version}/plugin.zip",
             "signature_url": sig_url,
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
-        # 历史版本列表
-        all_versions = _get_all_versions(plugin_id)
+        # 历史版本列表（每条带 download_url 和 signature_url）
         if len(all_versions) > 1:
-            versions_list = []
-            for v in all_versions:
-                v_changelog = _get_changelog_for_version(plugin_id, v, plugin_dir)
-                versions_list.append({
+            entry["versions"] = [
+                {
                     "version": v,
                     "download_url": f"packages/{plugin_id}/{v}/plugin.zip",
-                    "changelog": v_changelog,
-                })
-            entry["versions"] = versions_list
+                    "signature_url": (
+                        f"packages/{plugin_id}/{v}/plugin.sig"
+                        if v in signed_versions
+                        else ""
+                    ),
+                    "changelog": _get_changelog_for_version(plugin_id, v, plugin_dir),
+                }
+                for v in all_versions
+            ]
 
         if icon_url:
             entry["icon_url"] = icon_url
