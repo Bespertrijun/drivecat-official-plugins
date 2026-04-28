@@ -9,13 +9,14 @@ plugins/
   _shared/               ← 共享资源
     sdk.js               ← 插件 UI 通信 SDK
   rename/                ← 示例：批量重命名插件
-    manifest.json        ← 插件清单（不含 version）
-    version.py           ← 版本号（如 __version__ = "1.0"）
+    manifest.json        ← 插件清单（version 由 git tag 自动注入）
     main.py              ← 入口（实现 PluginInterface）
-    rename_engine.py     ← 业务逻辑
-    rename_manager.py
+    rename_engine.py     ← 8 种规则引擎
+    rename_manager.py    ← 预览 / 并发执行 / 流式进度
     ui/
-      index.html         ← 插件前端 UI（iframe 模式）
+      index.html         ← 3 步向导骨架
+      style.css          ← 样式（DriveCat 主题变量）
+      app.js             ← 交互逻辑（选文件 / 配规则 / SSE 执行）
 dist/                    ← 发布目录（自动生成，勿手动修改）
   index.json
   packages/
@@ -45,7 +46,7 @@ plugins/
   "author": "YourName",
   "description": "插件功能描述",
   "hooks": ["before_rename", "after_rename"],
-  "permissions": ["drive.list", "drive.rename"],
+  "permissions": ["drive.list", "drive.rename", "fs.read", "fs.write"],
   "source": "official",
   "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
   "entry": "main.MyPlugin"
@@ -188,6 +189,34 @@ plugins/
 
 ---
 
+#### `fs.read` / `fs.write` — 文件存储
+
+通过 `context.get_fs()` 获取 `FileProxy`。所有操作限制在 `plugin_data/{plugin_id}/` 目录内，防止路径遍历。
+
+需在 manifest 中声明 `fs.read` 和/或 `fs.write` 权限。
+
+| 方法 | 所需权限 | 说明 |
+|------|---------|------|
+| `read_bytes(path)` | `fs.read` | 读取文件（二进制） |
+| `read_text(path, encoding?)` | `fs.read` | 读取文件（文本，默认 UTF-8） |
+| `list_dir(path?)` | `fs.read` | 列出目录内容，返回文件名列表 |
+| `exists(path)` | `fs.read` | 检查文件/目录是否存在 |
+| `write_bytes(path, data)` | `fs.write` | 写入文件（二进制），自动创建父目录 |
+| `write_text(path, data, encoding?)` | `fs.write` | 写入文件（文本），自动创建父目录 |
+| `mkdir(path)` | `fs.write` | 创建目录（含父目录） |
+| `delete(path)` | `fs.write` | 删除文件（不允许删除目录） |
+| `delete_dir(path)` | `fs.write` | 递归删除目录（不能删根目录） |
+| `root` | 无 | 属性，返回插件数据目录的绝对路径 |
+
+```python
+# 示例：用 FileProxy 存储 JSON 配置
+fs = context.get_fs()
+fs.write_text("config.json", json.dumps({"key": "value"}))
+data = json.loads(fs.read_text("config.json"))
+```
+
+---
+
 #### `db.read` / `db.write` — 数据库
 
 通过 `context.get_db()` 获取 `DbProxy`。需在 manifest 中声明 `db.read` 和/或 `db.write` 权限。
@@ -200,6 +229,8 @@ plugins/
 | `commit()` | `db.write` | 提交事务 |
 | `rollback()` | 无 | 回滚事务，始终可用 |
 | `close()` | 无 | 关闭连接，始终可用 |
+
+> **推荐**：大多数插件应优先使用 `FileProxy` (`fs.read/fs.write`) 存储自身数据（如模板、配置），仅在需要查询宿主数据表时才使用 `DbProxy`。
 
 #### 数据模型
 
@@ -341,6 +372,20 @@ await drive.delete(file_id)         # ❌ PermissionError
 ```python
 context.register_router(router, prefix="/my-route", tags=["标签"])
 # 最终路径: /api/plugins/{plugin_id}/my-route/...
+```
+
+#### context.get_fs() — 获取文件存储代理
+
+```python
+# 需声明 fs.read 和/或 fs.write 权限
+fs = context.get_fs()
+
+# 读写 JSON
+if fs.exists("templates.json"):
+    data = json.loads(fs.read_text("templates.json"))
+fs.write_text("templates.json", json.dumps(data, ensure_ascii=False))
+
+# 存储路径：plugin_data/{plugin_id}/templates.json
 ```
 
 #### context.get_db() — 获取数据库代理
@@ -504,9 +549,53 @@ UI 端通过 `DriveCat.api(method, path, body)` 调用，`path` 只需写 `/{pre
 
 - **禁止相对导入** — 框架用 `spec_from_file_location` 加载入口模块，无包身份，`from .xxx import` 会报错。同目录模块用绝对导入 `from xxx import` 即可（前提是已将插件目录加入 `sys.path`）。
 - **权限最小化** — 只声明实际需要的权限，未声明的方法调用会抛 `PermissionError`。
+- **数据存储优先用 FileProxy** — 插件自身数据（模板、配置等）用 `context.get_fs()` 存在 `plugin_data/{plugin_id}/` 下，安全隔离。仅在需要查询宿主数据表时才用 `context.get_db()`。
 - **沙箱执行** — 钩子 handler 在进程沙箱中执行，连续失败 3 次会被自动禁用。
 - **卸载自动清理** — 框架会自动注销钩子和删除路由，`on_unload` 中只需清理插件自身资源。
 - **元数据唯一来源** — `manifest.json` 是插件元数据的唯一真相源。`get_meta()` 应直接读取 manifest，避免硬编码导致版本号、描述等在两处漂移。
+## 本地开发与测试（Plugin Dev Runtime）
+
+插件开发者无需安装 DriveCat 主服务，使用内置的 **Plugin Dev Runtime** 即可在本地测试插件 UI 和后端逻辑。
+
+```bash
+pip install -r requirements.txt
+python devrt/server.py plugins/rename
+# → 🐱 Plugin Dev Runtime — http://localhost:9000
+```
+
+打开浏览器即可看到：
+- **中央**：插件 UI（iframe 嵌入，自动注入 DriveCat 暗色主题变量）
+- **DevTools 面板**：实时显示 Toast、Resize、API 调用日志（默认桌面展开、移动端折叠，header 上的 `DevTools` 按钮随时切换）
+- **顶部**：入口模式切换（独立入口 / 右键入口 / 仪表盘卡片）+ 主题切换（深色 / 浅色）
+
+### 入口模式（对应宿主三种 plugin position）
+
+| 模式 | 模拟的宿主位置 | 容器形态 | 适用场景 |
+|------|---------------|---------|---------|
+| **独立入口（全屏）** | `PluginRuntimeView` (`/plugin-runtime/:id`) | 全宽 iframe，圆角 16px | 用户从插件列表点击进入插件主页面 |
+| **右键入口（弹窗）** | `FileBrowser` 的 `n-modal` | 800×85vh modal，圆角 16px | 用户在文件上右键触发 `file.context_menu` |
+| **仪表盘卡片** | `dashboard.widget`（前瞻模拟） | 400×320 卡片，圆角 10px，3px 渐变顶条 | 仪表盘上的小组件 |
+
+> 容器尺寸、圆角、阴影、CSS 变量与真实 DriveCat 主应用一一对齐，验证插件 UI 在三种宿主形态下的适配效果。`dashboard.widget` 后端已定义但 DriveCat 前端尚未实装，DevRT 提前模拟便于插件作者预先适配。
+
+### Dev Runtime 提供的能力
+
+| 能力 | 说明 |
+|------|------|
+| Mock Drive | 内存虚拟文件系统，含动漫/电影示例文件 |
+| FileProxy | 真实文件 I/O 沙箱（`devrt_data/{plugin_id}/`） |
+| 路由注册 | 插件的 FastAPI 路由正常挂载 |
+| SSE 流式 | 支持 `StreamingResponse` |
+| iframe 协议 | 完整的 `host.init` / `plugin.toast` / `plugin.resize` / `plugin.close` |
+| DevTools 浮层 | 可切换显隐，桌面右侧固定面板、移动端底部抽屉，不挤压 iframe 空间 |
+| 响应式断点 | `≤768px` 移动端布局；`≤380px` 小屏（如 iPhone SE）进一步紧凑 |
+
+```bash
+# 自定义端口
+python devrt/server.py plugins/rename --port 8080
+```
+
+> **注意**：`devrt_data/` 已被 `.gitignore` 忽略，不会进入版本控制。
 
 ## 构建与发布
 
@@ -525,37 +614,49 @@ python scripts/build.py --dev
 
 > **注意**：`--dev` 生成的 `plugins/*/_shared/` 副本已被 `.gitignore` 忽略，不会进入版本控制。
 
-### 版本号自动生成
+### 版本号（基于 Git Tag）
 
-每个插件目录下创建 `version.py`，写入基础版本号：
+版本号完全由 git tag 驱动，**不需要** 在 manifest 中写 `version` 字段。
 
-```python
-__version__ = "1.0"
+**Tag 命名规范**：`{插件目录名}/v{semver}`
+
+```bash
+# 发布 rename 插件 1.0.0
+git tag rename/v1.0.0
+
+# 发布 1.1.0
+git tag rename/v1.1.0
+
+# 推送 tag
+git push origin --tags
 ```
 
-`build.py` 自动读取 `version.py`，追加 patch 号（= `version.py` 最后修改以来该插件目录的 commit 数）：
+| 操作 | Tag | 构建版本 |
+|------|-----|---------|
+| `git tag rename/v1.0.0` | `rename/v1.0.0` | `1.0.0` |
+| `git tag rename/v1.0.1` | `rename/v1.0.1` | `1.0.1` |
+| `git tag rename/v1.1.0` | `rename/v1.1.0` | `1.1.0` |
 
-| 操作 | 版本 |
-|------|------|
-| 创建 `version.py` 写 `"1.0"`，提交 | `1.0.0` |
-| 之后又提交了 3 次 | `1.0.3` |
-| 改 `version.py` 为 `"1.1"`，提交 | `1.1.0` ← 归零 |
-| 之后又提交了 2 次 | `1.1.2` |
+**没有 tag 的插件会被跳过**，build.py 会提示创建 tag。
 
-**日常开发**：只维护 `version.py` 里的 `major.minor`，patch 随每次提交自动递增。修改 `version.py` 后 patch 自动归零。
-
-构建时 zip 包内的 `manifest.json` 会被自动写入完整版本号（如 `1.0.5`），运行时 `get_meta()` 返回的版本与市场一致。
+构建时 zip 包内的 `manifest.json` 会被自动写入 tag 对应的版本号，运行时 `get_meta()` 返回的版本与市场一致。
 
 ### Changelog 自动生成
 
 `build.py` 的 changelog 生成逻辑：
 
-1. 如果 `manifest.json` 中有 `"changelog"` 字段且不为空 → **使用手写值**（手动 override）
-2. 否则 → **自动从 git log 生成**，取该插件目录下最近 20 条 commit 的摘要
+1. `manifest.json` 中手写 `"changelog"` → **最高优先级**（手动 override）
+2. 否则 → **自动从两个相邻 tag 之间的 git log 生成**
 
-自动生成的格式：
 ```
-- feat: implement rename plugin with UI
-- fix: 修复字段不一致
-- refactor: 清理冗余代码
+# 假设有两个 tag：rename/v1.0.0 和 rename/v1.1.0
+# changelog 内容 = git log rename/v1.0.0..rename/v1.1.0 -- plugins/rename/
+
+- feat: 支持文件夹批量重命名
+- fix: 修复预览区不刷新
+- refactor: 模板存储改用 FileProxy
 ```
+
+如果只有一个 tag（首次发布），changelog 包含该 tag 之前的所有 commits。
+
+`index.json` 中还会生成 `versions` 数组，包含所有历史版本及各自的 changelog，供市场前端展示版本选择器。

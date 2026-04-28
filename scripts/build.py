@@ -1,5 +1,16 @@
 """
 打包脚本：扫描 plugins/ 下所有插件，生成 dist/index.json + zip 包 + 签名。
+
+版本号策略：
+  - 从 git tag 读取，tag 格式：{plugin_dir_name}/v{semver}
+    例：rename/v1.0.0, rename/v1.0.1
+  - 没有 tag 时默认 0.0.0
+  - 多版本保留：dist/packages/{id}/{version}/plugin.zip
+
+Changelog 策略：
+  1. manifest.json 中手写 changelog → 最高优先级
+  2. 两个相邻 tag 之间的 git log → 自动生成
+  3. 都没有 → 空字符串
 """
 
 import hashlib
@@ -8,6 +19,7 @@ import subprocess
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGINS_DIR = ROOT / "plugins"
@@ -37,78 +49,104 @@ def _sign(data: bytes, private_key) -> bytes:
     return private_key.sign(digest)
 
 
-def _git_commit_count(plugin_dir: Path) -> int:
-    """统计 version.py 上次修改以来，该插件目录的 commit 次数。
+# ── 版本号：基于 git tag ──
 
-    这确保了 major.minor 变更后 patch 从 0 开始。
+
+def _get_tags_for_plugin(plugin_name: str) -> List[Tuple[str, str]]:
     """
+    获取某插件的所有 git tags，按语义版本降序排列。
+
+    Tag 格式：{plugin_name}/v{semver}，如 rename/v1.0.0
+    返回：[(tag_name, version_str), ...] 降序排列
+    """
+    prefix = f"{plugin_name}/v"
     try:
-        version_file = plugin_dir / "version.py"
-
-        # 找到 version.py 最后一次修改的 commit hash
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", str(version_file)],
+            ["git", "tag", "--list", f"{prefix}*", "--sort=-v:refname"],
             capture_output=True, text=True, cwd=ROOT,
             encoding="utf-8", errors="replace",
         )
-        last_ver_hash = (result.stdout or "").strip()
-
-        if not last_ver_hash:
-            # version.py 还没有被 commit 过，计算全量
-            result = subprocess.run(
-                ["git", "rev-list", "--count", "HEAD", "--", str(plugin_dir)],
-                capture_output=True, text=True, cwd=ROOT,
-                encoding="utf-8", errors="replace",
-            )
-            stdout = (result.stdout or "").strip()
-            return int(stdout) if stdout.isdigit() else 0
-
-        # 计算自 version.py 最后修改以来的 commit 数（不含那次本身）
-        result = subprocess.run(
-            ["git", "rev-list", "--count", f"{last_ver_hash}..HEAD",
-             "--", str(plugin_dir)],
-            capture_output=True, text=True, cwd=ROOT,
-            encoding="utf-8", errors="replace",
-        )
-        stdout = (result.stdout or "").strip()
-        return int(stdout) if stdout.isdigit() else 0
-
+        if result.returncode != 0 or not (result.stdout or "").strip():
+            return []
+        tags = []
+        for line in result.stdout.strip().splitlines():
+            tag = line.strip()
+            if tag.startswith(prefix):
+                version = tag[len(prefix):]
+                tags.append((tag, version))
+        return tags
     except FileNotFoundError:
-        pass
-    return 0
+        return []
 
 
-def _read_version_py(plugin_dir: Path) -> str:
-    """从 version.py 读取 __version__ 值。"""
-    import re
-    version_file = plugin_dir / "version.py"
-    if not version_file.exists():
-        return "0.0"
-    content = version_file.read_text(encoding="utf-8")
-    match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
-    return match.group(1) if match else "0.0"
+def _get_latest_version(plugin_name: str) -> str:
+    """获取插件的最新版本号。没有 tag 时返回 '0.0.0'。"""
+    tags = _get_tags_for_plugin(plugin_name)
+    return tags[0][1] if tags else "0.0.0"
 
 
-def _compute_version(base_version: str, plugin_dir: Path) -> str:
+def _get_all_versions(plugin_name: str) -> List[str]:
+    """获取插件的所有版本号列表（降序）。"""
+    return [v for _, v in _get_tags_for_plugin(plugin_name)]
+
+
+# ── Changelog：两个 tag 之间的 git log ──
+
+
+def _get_changelog(plugin_name: str, plugin_dir: Path, max_entries: int = 20) -> str:
     """
-    自动计算版本号。
+    从 git log 自动生成 changelog。
 
-    version.py 中写 major.minor（如 '1.0'），patch 由 git commit 数量自动生成。
-    如果已经是完整的 major.minor.patch 格式，则保留手写值。
+    策略：取当前 tag 和上一个 tag 之间的 commit 摘要。
+    如果只有一个 tag（首个版本），取该 tag 之前所有 commits。
     """
-    parts = base_version.split(".")
-    if len(parts) >= 3:
-        return base_version
-    patch = _git_commit_count(plugin_dir)
-    return f"{base_version}.{patch}"
+    tags = _get_tags_for_plugin(plugin_name)
+    if not tags:
+        # 没有任何 tag，取最近 N 条 commit
+        return _git_log_range(None, "HEAD", plugin_dir, max_entries)
+
+    current_tag = tags[0][0]
+    if len(tags) >= 2:
+        prev_tag = tags[1][0]
+        # 两个 tag 之间的 commits
+        return _git_log_range(prev_tag, current_tag, plugin_dir, max_entries)
+    else:
+        # 只有一个 tag，取该 tag 及之前的所有 commits
+        return _git_log_range(None, current_tag, plugin_dir, max_entries)
 
 
-def _get_changelog(plugin_dir: Path, max_entries: int = 20) -> str:
-    """从 git log 自动生成 changelog。取该插件目录下最近的 commit 摘要。"""
+def _get_changelog_for_version(
+    plugin_name: str, version: str, plugin_dir: Path, max_entries: int = 20
+) -> str:
+    """获取指定版本的 changelog（该版本 tag 到上一个 tag 之间的 commits）。"""
+    tags = _get_tags_for_plugin(plugin_name)
+    tag_versions = [v for _, v in tags]
+
+    target_tag = f"{plugin_name}/v{version}"
+    if version not in tag_versions:
+        return ""
+
+    idx = tag_versions.index(version)
+    if idx + 1 < len(tags):
+        prev_tag = tags[idx + 1][0]
+        return _git_log_range(prev_tag, target_tag, plugin_dir, max_entries)
+    else:
+        return _git_log_range(None, target_tag, plugin_dir, max_entries)
+
+
+def _git_log_range(
+    from_ref: Optional[str], to_ref: str, plugin_dir: Path, max_entries: int
+) -> str:
+    """获取 from_ref..to_ref 之间，限定在 plugin_dir 下的 commit 摘要。"""
     try:
+        if from_ref:
+            range_spec = f"{from_ref}..{to_ref}"
+        else:
+            range_spec = to_ref
+
         result = subprocess.run(
-            ["git", "log", f"--max-count={max_entries}", "--pretty=format:%s",
-             "--", str(plugin_dir)],
+            ["git", "log", range_spec, f"--max-count={max_entries}",
+             "--pretty=format:%s", "--", str(plugin_dir)],
             capture_output=True, text=True, cwd=ROOT,
             encoding="utf-8", errors="replace",
         )
@@ -118,8 +156,10 @@ def _get_changelog(plugin_dir: Path, max_entries: int = 20) -> str:
         lines = stdout.strip().splitlines()
         return "\n".join(f"- {line}" for line in lines)
     except FileNotFoundError:
-        # git 不可用
         return ""
+
+
+# ── 构建 ──
 
 
 def build():
@@ -136,22 +176,26 @@ def build():
             manifest = json.load(f)
 
         plugin_id = plugin_dir.name
-        base_version = _read_version_py(plugin_dir)
-        version = _compute_version(base_version, plugin_dir)
+        version = _get_latest_version(plugin_id)
+
+        if version == "0.0.0":
+            print(f"  [skip]   {plugin_id} — no tag found (create one: git tag {plugin_id}/v1.0.0)")
+            continue
 
         # 打 zip
         pkg_dir = DIST_DIR / "packages" / plugin_id / version
         pkg_dir.mkdir(parents=True, exist_ok=True)
         zip_path = pkg_dir / "plugin.zip"
 
-        # 写入 zip 的 manifest 使用计算后的版本号
+        # 写入 zip 的 manifest 使用 tag 版本号
         build_manifest = {**manifest, "version": version}
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # 打包插件自身文件（排除 _shared/ dev 副本和原始 manifest）
             for file in plugin_dir.rglob("*"):
                 rel = file.relative_to(plugin_dir)
-                if file.is_file() and "__pycache__" not in rel.parts and "_shared" not in rel.parts and rel.name != "manifest.json":
+                skip_parts = {"__pycache__", "_shared", ".git"}
+                if file.is_file() and not skip_parts.intersection(rel.parts) and rel.name != "manifest.json":
                     zf.write(file, rel)
 
             # 写入版本号已更新的 manifest.json
@@ -188,6 +232,9 @@ def build():
                 icon_url = f"packages/{plugin_id}/{icon_src.name}"
                 print(f"  [icon]   {plugin_id} → {icon_url}")
 
+        # changelog: manifest 手写优先，否则从 tag 间 git log 自动生成
+        changelog = manifest.get("changelog") or _get_changelog(plugin_id, plugin_dir)
+
         # 构建 index 条目
         entry = {
             "name": manifest["name"],
@@ -196,11 +243,25 @@ def build():
             "description": manifest.get("description", ""),
             "source_url": manifest.get("source_url", ""),
             "permissions": manifest.get("permissions", []),
-            "changelog": manifest.get("changelog") or _get_changelog(plugin_dir),
+            "changelog": changelog,
             "download_url": f"packages/{plugin_id}/{version}/plugin.zip",
             "signature_url": sig_url,
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
+
+        # 历史版本列表
+        all_versions = _get_all_versions(plugin_id)
+        if len(all_versions) > 1:
+            versions_list = []
+            for v in all_versions:
+                v_changelog = _get_changelog_for_version(plugin_id, v, plugin_dir)
+                versions_list.append({
+                    "version": v,
+                    "download_url": f"packages/{plugin_id}/{v}/plugin.zip",
+                    "changelog": v_changelog,
+                })
+            entry["versions"] = versions_list
+
         if icon_url:
             entry["icon_url"] = icon_url
         index_plugins.append(entry)

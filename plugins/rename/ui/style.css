@@ -1,0 +1,563 @@
+/* ── 默认变量（fallback，宿主通过 SDK 自动覆盖） ── */
+:root {
+  --dc-primary: #3b82f6;
+  --dc-primary-hover: #2563eb;
+  --dc-bg-card: #ffffff;
+  --dc-bg-elevated: #f8fafc;
+  --dc-bg-surface: #fdfdfd;
+  --dc-text-primary: #1e293b;
+  --dc-text-secondary: #475569;
+  --dc-text-tertiary: #94a3b8;
+  --dc-border: #e2e8f0;
+  --dc-error: #ef4444;
+  --dc-success: #10b981;
+  --dc-warning: #f59e0b;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--dc-bg-surface);
+  color: var(--dc-text-primary);
+  padding: 20px 24px;
+  font-size: 14px;
+}
+
+/* ── 步骤导航 ── */
+.steps-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 28px;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dc-text-tertiary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.step.active { color: var(--dc-primary); }
+.step.done { color: var(--dc-success); }
+.step-num {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  background: var(--dc-bg-elevated);
+  border: 1.5px solid var(--dc-border);
+  transition: all 0.2s;
+}
+.step.active .step-num { background: var(--dc-primary); color: #fff; border-color: var(--dc-primary); }
+.step.done .step-num { background: var(--dc-success); color: #fff; border-color: var(--dc-success); }
+.step-line {
+  width: 48px; height: 1px;
+  background: var(--dc-border);
+  margin: 0 12px;
+}
+
+/* ── 步骤面板 ── */
+.step-panel { display: none; }
+.step-panel.active { display: block; }
+
+.panel-header { margin-bottom: 20px; }
+.panel-header h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.hint { font-size: 12px; color: var(--dc-text-tertiary); }
+
+/* ── 表单控件 ── */
+.control-group { margin-bottom: 16px; }
+.control-group label {
+  display: block; font-size: 13px; font-weight: 600;
+  color: var(--dc-text-secondary); margin-bottom: 4px;
+}
+.control-group.inline {
+  display: flex; align-items: center; gap: 12px;
+}
+.control-group.inline label { margin-bottom: 0; }
+
+input[type="text"], input[type="number"], select {
+  padding: 8px 12px;
+  border: 1px solid var(--dc-border);
+  border-radius: 6px;
+  background: var(--dc-bg-card);
+  color: var(--dc-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input:focus, select:focus { border-color: var(--dc-primary); }
+select { width: 100%; }
+
+/* ── 按钮 ── */
+.btn {
+  padding: 8px 20px;
+  border: none; border-radius: 6px;
+  cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all 0.15s;
+}
+.btn-primary { background: var(--dc-primary); color: #fff; }
+.btn-primary:hover { background: var(--dc-primary-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: var(--dc-bg-elevated); color: var(--dc-text-primary); border: 1px solid var(--dc-border); }
+.btn-secondary:hover { filter: brightness(0.96); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-link { background: none; border: none; color: var(--dc-primary); cursor: pointer; font-size: 12px; }
+
+.step-actions {
+  display: flex; justify-content: space-between;
+  margin-top: 24px; padding-top: 16px;
+  border-top: 1px solid var(--dc-border);
+}
+
+/* ── 面包屑 ── */
+.breadcrumb {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--dc-text-tertiary);
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.crumb {
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  transition: background 0.15s;
+}
+.crumb:hover { background: var(--dc-bg-elevated); color: var(--dc-primary); }
+.breadcrumb .sep { color: var(--dc-border); }
+
+/* ── 文件列表 ── */
+.file-list {
+  border: 1px solid var(--dc-border); border-radius: 8px;
+  max-height: 320px; overflow-y: auto;
+  background: var(--dc-bg-card);
+}
+.file-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--dc-border);
+  cursor: pointer; font-size: 13px;
+  transition: background 0.1s;
+}
+.file-item:last-child { border-bottom: none; }
+.file-item:hover { background: var(--dc-bg-elevated); }
+.file-item.selected { background: rgba(59,130,246,0.08); }
+.file-icon { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-size { font-size: 11px; color: var(--dc-text-tertiary); flex-shrink: 0; }
+.file-check { width: 16px; height: 16px; accent-color: var(--dc-primary); flex-shrink: 0; }
+
+.selection-info {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px; padding: 8px 12px;
+  background: rgba(59,130,246,0.06); border-radius: 6px;
+  font-size: 12px; color: var(--dc-primary);
+}
+
+/* ── 模板区 ── */
+.template-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; padding: 10px 14px;
+  background: var(--dc-bg-elevated); border-radius: 8px;
+  border: 1px solid var(--dc-border);
+}
+.template-bar select { flex: 1; }
+
+/* ── 规则卡片 ── */
+.rule-card {
+  background: var(--dc-bg-card);
+  border: 1px solid var(--dc-border);
+  border-radius: 8px; padding: 14px;
+  margin-bottom: 10px;
+}
+.rule-card-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.rule-card-title { font-weight: 600; font-size: 13px; color: var(--dc-primary); }
+.btn-remove {
+  background: none; border: none;
+  color: var(--dc-text-tertiary); cursor: pointer;
+  font-size: 16px;
+}
+.btn-remove:hover { color: var(--dc-error); }
+.rule-field { margin-bottom: 8px; }
+.rule-field label { font-size: 12px; color: var(--dc-text-tertiary); margin-bottom: 2px; display: block; }
+.rule-field input, .rule-field select { width: 100%; }
+.rule-row { display: flex; gap: 8px; }
+.rule-row > * { flex: 1; }
+
+.add-rule-row {
+  display: flex; gap: 8px; margin-bottom: 20px;
+}
+.add-rule-row select { flex: 1; }
+
+/* ── 预览 ── */
+.preview-section { margin-top: 20px; }
+.preview-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+#preview-area {
+  border: 1px solid var(--dc-border); border-radius: 8px;
+  max-height: 240px; overflow-y: auto;
+  background: var(--dc-bg-card);
+}
+.preview-row {
+  display: flex; justify-content: space-between;
+  padding: 7px 14px; border-bottom: 1px solid var(--dc-border);
+  font-size: 12px;
+}
+.preview-row:last-child { border-bottom: none; }
+.preview-old { color: var(--dc-text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-arrow { color: var(--dc-text-tertiary); margin: 0 8px; flex-shrink: 0; }
+.preview-new { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.preview-new.changed { color: var(--dc-primary); font-weight: 500; }
+
+.execution-preview {
+  border: 1px solid var(--dc-border); border-radius: 8px;
+  max-height: 240px; overflow-y: auto;
+  background: var(--dc-bg-card);
+  margin-bottom: 20px;
+}
+
+/* ── 流控控件行（与预览之间用 border-top 分隔） ── */
+.flow-control-row {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--dc-border);
+  padding-top: 16px;
+  margin-top: 4px;
+}
+.flow-control-row .control-group {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+#concurrency { width: 80px; }
+#pause-ms { width: 100px; }
+
+/* ── 进度 ── */
+.progress-section { margin-top: 20px; }
+.progress-bar-track {
+  height: 8px; background: var(--dc-bg-elevated);
+  border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--dc-border);
+}
+.progress-bar-fill {
+  height: 100%; background: var(--dc-primary);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.progress-stats {
+  text-align: center; font-size: 13px; font-weight: 600;
+  margin-top: 8px; color: var(--dc-text-secondary);
+}
+.progress-log {
+  margin-top: 12px; max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--dc-border); border-radius: 8px;
+  background: var(--dc-bg-card); font-size: 12px;
+}
+.log-item {
+  padding: 5px 12px; border-bottom: 1px solid var(--dc-border);
+  display: flex; justify-content: space-between;
+}
+.log-item:last-child { border-bottom: none; }
+.log-status { font-weight: 600; }
+.log-status.success { color: var(--dc-success); }
+.log-status.failed { color: var(--dc-error); }
+.log-status.skipped { color: var(--dc-text-tertiary); }
+
+.status-msg {
+  text-align: center; padding: 32px;
+  color: var(--dc-text-tertiary); font-size: 13px;
+}
+
+/* ── 模态框 ── */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: var(--dc-bg-elevated);
+  border: 1px solid var(--dc-border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 320px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+.modal-content h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.modal-content input {
+  width: 100%;
+  margin: 16px 0;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ── 响应式 (Mobile Adaptation) ── */
+/* 设计原则：
+   - 字号下限 14px，关键内容 15-16px
+   - 触摸目标 ≥ 44px（按钮、列表项、复选框）
+   - 视觉层级靠字号差和间距，不靠灰度
+*/
+@media (max-width: 768px) {
+  body {
+    padding: 16px;
+    font-size: 15px;
+  }
+
+  /* 步骤导航 */
+  .steps-bar {
+    margin-bottom: 24px;
+    /* 紧凑布局，避免拥挤 */
+    justify-content: space-between;
+  }
+  .step {
+    font-size: 13px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .step-num {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+  .step-line {
+    flex: 1;
+    width: auto;
+    min-width: 16px;
+    margin: 0 8px;
+  }
+
+  /* 标题和说明 */
+  .panel-header { margin-bottom: 24px; }
+  .panel-header h2 { font-size: 20px; }
+  .hint { font-size: 13px; }
+
+  /* 表单控件 — 增大触摸目标 */
+  .control-group { margin-bottom: 18px; }
+  .control-group label { font-size: 14px; margin-bottom: 6px; }
+  .control-group.inline {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  /* 流控行：移动端两组 control-group 仍并排，每组内 label/input 上下堆叠 */
+  .flow-control-row {
+    flex-direction: row;
+    gap: 12px;
+    padding-top: 14px;
+  }
+  .flow-control-row .control-group.inline {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .flow-control-row .control-group .hint { display: none; }
+  .flow-control-row #concurrency,
+  .flow-control-row #pause-ms { width: 100%; }
+  input[type="text"], input[type="number"], select {
+    padding: 12px 14px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  /* 面包屑 */
+  .breadcrumb {
+    font-size: 13px;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .crumb {
+    padding: 6px 10px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 文件列表 — 大触摸区 + 清晰排版 */
+  .file-list { max-height: 50vh; }
+  .file-item {
+    padding: 14px 16px;
+    gap: 14px;
+    font-size: 15px;
+    min-height: 56px;
+  }
+  .file-icon {
+    font-size: 22px;
+    width: 28px;
+  }
+  .file-name { font-size: 15px; }
+  .file-size { font-size: 13px; }
+  .file-check {
+    width: 22px;
+    height: 22px;
+  }
+
+  .selection-info {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+
+  /* 模板栏 */
+  .template-bar {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+    padding: 14px;
+  }
+  .template-bar .btn { width: 100%; min-height: 44px; }
+
+  /* 规则卡片 */
+  .rule-card {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .rule-card-title { font-size: 14px; }
+  .btn-remove {
+    font-size: 22px;
+    padding: 4px 8px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+  .rule-field { margin-bottom: 12px; }
+  .rule-field label { font-size: 13px; margin-bottom: 4px; }
+  .rule-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .add-rule-row {
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .add-rule-row .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  /* 按钮 */
+  .btn {
+    padding: 12px 18px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+  .btn-sm {
+    padding: 8px 14px;
+    font-size: 14px;
+    min-height: 36px;
+  }
+  .btn-link {
+    font-size: 14px;
+    padding: 8px 4px;
+  }
+
+  /* 步骤底部按钮 — 单行并排，主按钮占比更大 */
+  .step-actions {
+    flex-direction: row;
+    gap: 10px;
+    padding-top: 16px;
+    margin-top: 20px;
+  }
+  .step-actions .btn {
+    flex: 1;
+    width: auto;
+    padding: 14px 12px;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  /* Step 1 占位空 div 不撑开 */
+  .step-actions > div:empty { display: none; }
+
+  /* 预览区 — 上下堆叠并清晰区分原名/新名 */
+  .preview-section h3 { font-size: 15px; margin-bottom: 12px; }
+  #preview-area, .execution-preview { max-height: 50vh; }
+  .preview-row {
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 16px;
+  }
+  .preview-old {
+    font-size: 14px;
+    white-space: normal;
+    word-break: break-all;
+  }
+  .preview-arrow { display: none; }
+  .preview-new {
+    font-size: 15px;
+    text-align: left;
+    padding: 8px 12px;
+    border-left: 3px solid var(--dc-border);
+    background: var(--dc-bg-elevated);
+    border-radius: 4px;
+    white-space: normal;
+    word-break: break-all;
+  }
+  .preview-new.changed {
+    border-left-color: var(--dc-primary);
+    background: rgba(59, 130, 246, 0.06);
+  }
+
+  /* 进度区 */
+  .progress-bar-track { height: 10px; }
+  .progress-stats {
+    font-size: 14px;
+    margin-top: 10px;
+  }
+  .progress-log {
+    max-height: 40vh;
+    font-size: 13px;
+  }
+  .log-item {
+    padding: 10px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .log-status { font-size: 13px; }
+
+  .status-msg {
+    padding: 24px 16px;
+    font-size: 14px;
+  }
+
+  /* 模态框 — 全宽自适应 */
+  .modal-content {
+    width: calc(100vw - 32px);
+    max-width: 360px;
+    padding: 20px;
+  }
+  .modal-content h3 { font-size: 17px; }
+  .modal-content input {
+    margin: 18px 0;
+    min-height: 44px;
+  }
+  .modal-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+}
+
+/* ── 小屏（≤ 380px）进一步紧凑 ── */
+@media (max-width: 380px) {
+  body { padding: 12px; }
+  .steps-bar { gap: 4px; }
+  .step { font-size: 12px; }
+  .step-num { width: 24px; height: 24px; font-size: 12px; }
+  .step-line { min-width: 8px; margin: 0 4px; }
+  .file-item { padding: 12px; gap: 10px; }
+}

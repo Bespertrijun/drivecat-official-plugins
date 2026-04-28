@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugin Dev Runtime — __PLUGIN_NAME__</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root, [data-theme="dark"] {
+      --bg: #0f0f1a;
+      --bg-card: #1a1a2e;
+      --bg-surface: #1a1a2e;
+      --bg-elevated: #232340;
+      --text: #f1f1f4;
+      --text-secondary: #a0a0b8;
+      --text-tertiary: #6b6b82;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --border: rgba(255,255,255,0.08);
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --info: #6366f1;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    [data-theme="light"] {
+      --bg: #f5f5f9;
+      --bg-card: #ffffff;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f0f0f5;
+      --text: #1a1a2e;
+      --text-secondary: #5c5c6e;
+      --text-tertiary: #9898aa;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --border: rgba(0,0,0,0.08);
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --info: #6366f1;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-logo { font-size: 24px; }
+    .header-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .header-meta {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .header-meta code {
+      background: var(--bg-elevated);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'Fira Code', monospace;
+    }
+
+    /* ── Controls Group ── */
+    .controls-group {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    /* ── Entry Mode Switcher ── */
+    .mode-switcher {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      padding: 3px;
+      transition: background 0.3s;
+    }
+    .mode-btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .mode-btn.active {
+      background: var(--bg-card);
+      color: var(--text);
+      font-weight: 500;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .mode-btn:hover:not(.active) {
+      color: var(--text);
+      background: rgba(128,128,128,0.1);
+    }
+
+    /* ── DriveCat Layout Mocks ── */
+    .app-container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    
+    .dc-sidebar {
+      width: 200px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .dc-sidebar-logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+      padding: 0 8px;
+    }
+    .dc-sidebar-logo span { font-size: 24px; }
+    
+    .dc-nav-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: not-allowed;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .dc-nav-item.active {
+      background: rgba(99,102,241,0.1);
+      color: var(--primary);
+    }
+    .dc-nav-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: currentColor;
+      opacity: 0.5;
+    }
+    .dc-nav-item.active .dc-nav-icon { opacity: 1; }
+
+    .dc-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .dc-bottom-tabs {
+      display: none;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      height: 64px;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .dc-tab-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: var(--text-secondary);
+      font-size: 10px;
+    }
+    .dc-tab-item.active {
+      color: var(--primary);
+    }
+    
+    /* ── Main Layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 65px);
+      position: relative;
+    }
+
+    /* ── Inline iframe Area (Standalone Mode) ── */
+    .iframe-area {
+      flex: 1;
+      padding: 24px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .iframe-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: background 0.3s, border-color 0.3s;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.02);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Widget Area (Dashboard Widget Mode) ── */
+    .widget-backdrop {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+    body.is-widget .widget-backdrop {
+      display: flex;
+    }
+    body.is-widget .iframe-area {
+      opacity: 0.15;
+      pointer-events: none;
+    }
+    .dc-widget-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      width: 400px;
+      height: 320px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      position: relative;
+      animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .dc-widget-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+      border-radius: 10px 10px 0 0;
+    }
+    .dc-widget-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dc-widget-body {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Modal Area (Context Menu Mode) ── */
+    .modal-backdrop {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    body.is-modal .modal-backdrop {
+      display: flex;
+    }
+    body.is-modal .iframe-area {
+      /* Make it look like a fake file browser behind the modal */
+      opacity: 0.3;
+      pointer-events: none;
+      background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.02) 10px, rgba(255,255,255,0.02) 20px);
+    }
+    .dc-modal {
+      background: var(--bg-card);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 800px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalScaleIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .dc-modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-surface);
+    }
+    .dc-modal-close {
+      cursor: pointer;
+      color: var(--text-tertiary);
+      font-size: 20px;
+      line-height: 1;
+    }
+    .dc-modal-close:hover { color: var(--error); }
+    .dc-modal-body {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #plugin-iframe {
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      flex: 1;
+      min-height: 400px;
+      display: block;
+      background: transparent;
+    }
+
+    /* ── DevTools Toggle Button ── */
+    .devtools-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .devtools-toggle:hover {
+      color: var(--text);
+      border-color: var(--primary);
+    }
+    .devtools-toggle.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+    .devtools-toggle .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.6;
+    }
+
+    /* ── DevTools Panel ── */
+    .devtools {
+      display: none;
+      width: 340px;
+      min-width: 340px;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border);
+      flex-direction: column;
+      transition: background 0.3s, border-color 0.3s;
+      z-index: 101; /* Keep devtools above modal backdrop for debugging */
+    }
+    body.devtools-open .devtools {
+      display: flex;
+    }
+    .devtools-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .devtools-clear {
+      background: none;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .devtools-clear:hover { color: var(--text); }
+    .devtools-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+    }
+    .log-entry {
+      padding: 6px 8px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      line-height: 1.5;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .log-entry .log-time {
+      color: var(--text-tertiary);
+      margin-right: 8px;
+    }
+    .log-entry .log-type {
+      font-weight: 600;
+      margin-right: 6px;
+    }
+    .log-entry.log-toast { background: rgba(99,102,241,0.08); }
+    .log-entry.log-toast .log-type { color: var(--primary); }
+    .log-entry.log-resize { background: rgba(16,185,129,0.08); }
+    .log-entry.log-resize .log-type { color: var(--success); }
+    .log-entry.log-close { background: rgba(239,68,68,0.08); }
+    .log-entry.log-close .log-type { color: var(--error); }
+    .log-entry.log-init { background: rgba(99,102,241,0.08); }
+    .log-entry.log-init .log-type { color: var(--info); }
+
+    /* ── Toast ── */
+    .toast-container {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: right 0.2s;
+    }
+    body.devtools-open .toast-container {
+      right: 360px;
+    }
+    .toast {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toastOut {
+      from { opacity: 1; }
+      to { opacity: 0; transform: translateY(-10px); }
+    }
+    .toast-info { background: var(--info); color: white; }
+
+    /* ── 响应式 (Mobile Adaptation) ── */
+    @media (max-width: 768px) {
+      .dc-sidebar { display: none; }
+      .dc-bottom-tabs { display: flex; }
+      .app-container { flex-direction: column; }
+      .main { flex-direction: column; height: auto; }
+      .iframe-area { padding: 12px; flex: none; min-height: 400px; }
+      body.devtools-open .devtools {
+        position: fixed;
+        bottom: 64px;          /* 让出底部 tab 栏 */
+        left: 0;
+        right: 0;
+        top: auto;
+        width: 100%;
+        min-width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        height: 50vh;
+        max-height: 400px;
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.2);
+        z-index: 999;
+      }
+      body.devtools-open .toast-container { right: 16px; }
+      .toast-container { right: 16px; left: 16px; top: 16px; }
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 12px 16px;
+      }
+      .controls-group {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .dc-modal {
+        max-width: 100%;
+        max-height: 85vh;
+        border-radius: 16px 16px 0 0;
+        border: none;
+        align-self: flex-end;
+      }
+      .modal-backdrop { padding: 0; align-items: flex-end; }
+      .dc-widget-card {
+        width: 100%;
+        height: 280px;
+        border-radius: 10px;
+      }
+      .widget-backdrop { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- DriveCat Mock Sidebar (Desktop) -->
+  <div class="dc-sidebar">
+    <div class="dc-sidebar-logo">
+      <span>🐱</span> DriveCat
+    </div>
+    <div class="dc-nav-item">
+      <div class="dc-nav-icon"></div> 仪表盘
+    </div>
+    <div class="dc-nav-item">
+      <div class="dc-nav-icon"></div> 网盘管理
+    </div>
+    <div class="dc-nav-item">
+      <div class="dc-nav-icon"></div> 同步任务
+    </div>
+    <div class="dc-nav-item active">
+      <div class="dc-nav-icon"></div> 插件市场
+    </div>
+    <div class="dc-nav-item" style="margin-top: auto;">
+      <div class="dc-nav-icon"></div> 设置
+    </div>
+  </div>
+
+  <!-- DriveCat Content Area -->
+  <div class="dc-content">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div>
+          <div class="header-title">Plugin Dev Runtime</div>
+          <div class="header-meta">
+            <span>__PLUGIN_NAME__</span>
+            <span>·</span>
+            <span>v__PLUGIN_VERSION__</span>
+            <span>·</span>
+            <code>__PLUGIN_ID__</code>
+          </div>
+        </div>
+      </div>
+      <div class="controls-group">
+        <div class="mode-switcher">
+          <button class="mode-btn active" onclick="switchTheme('dark')" id="btn-theme-dark">深色</button>
+          <button class="mode-btn" onclick="switchTheme('light')" id="btn-theme-light">浅色</button>
+        </div>
+        <div class="mode-switcher">
+          <button class="mode-btn active" onclick="switchMode('standalone')" id="btn-standalone">独立入口 (全屏)</button>
+          <button class="mode-btn" onclick="switchMode('contextmenu')" id="btn-contextmenu">右键入口 (弹窗)</button>
+          <button class="mode-btn" onclick="switchMode('widget')" id="btn-widget">仪表盘 (卡片)</button>
+        </div>
+        <button class="devtools-toggle" onclick="toggleDevtools()" id="btn-devtools">
+          <span class="dot"></span> DevTools
+        </button>
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div class="main">
+      
+      <!-- Inline Container (Standalone) -->
+      <div class="iframe-area">
+        <div style="margin-bottom: 12px; font-size: 13px; color: var(--text-tertiary); text-align: center;">
+          —— 当前为独立全屏模式（模拟点击我的插件直接进入） ——
+        </div>
+        <div class="iframe-container" id="inline-container">
+          <iframe id="plugin-iframe" src="/devrt/plugin-ui/ui/index.html"></iframe>
+        </div>
+      </div>
+
+      <!-- Widget Container (Dashboard Widget) -->
+      <div class="widget-backdrop" id="widget-backdrop">
+        <div class="dc-widget-card">
+          <div class="dc-widget-header">
+            __PLUGIN_NAME__
+          </div>
+          <div class="dc-widget-body" id="widget-container">
+            <!-- Iframe will be moved here when widget mode is active -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Container (Context Menu) -->
+      <div class="modal-backdrop" id="modal-backdrop">
+        <div class="dc-modal">
+          <div class="dc-modal-header">
+            <span>__PLUGIN_NAME__</span>
+            <span class="dc-modal-close" onclick="switchMode('standalone')">&times;</span>
+          </div>
+          <div class="dc-modal-body" id="modal-container">
+            <!-- Iframe will be moved here when modal mode is active -->
+          </div>
+        </div>
+      </div>
+
+      <!-- DevTools -->
+      <div class="devtools">
+        <div class="devtools-header">
+          <span>DevTools</span>
+          <button class="devtools-clear" onclick="clearLog()">清空</button>
+        </div>
+        <div class="devtools-log" id="devtools-log"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- DriveCat Mock Bottom Tabs (Mobile) -->
+  <div class="dc-bottom-tabs">
+    <div class="dc-tab-item">
+      <div class="dc-nav-icon"></div>
+      首页
+    </div>
+    <div class="dc-tab-item">
+      <div class="dc-nav-icon"></div>
+      任务
+    </div>
+    <div class="dc-tab-item active">
+      <div class="dc-nav-icon"></div>
+      插件
+    </div>
+    <div class="dc-tab-item">
+      <div class="dc-nav-icon"></div>
+      我的
+    </div>
+  </div>
+</div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    var PLUGIN_ID = '__PLUGIN_ID__'
+    var currentMode = 'standalone'
+    var currentTheme = 'dark'
+    var iframe = document.getElementById('plugin-iframe')
+    var inlineContainer = document.getElementById('inline-container')
+    var modalContainer = document.getElementById('modal-container')
+    var widgetContainer = document.getElementById('widget-container')
+
+    // ── DriveCat 主题变量（完整一致） ──
+    var THEMES = {
+      dark: {
+        '--dc-bg-base': '#0f0f1a',
+        '--dc-bg-card': '#1a1a2e',
+        '--dc-bg-surface': '#0f0f1a', // fallback compatibility
+        '--dc-bg-elevated': '#232340',
+        '--dc-bg-hover': '#2a2a4a',
+        '--dc-bg-input': '#16162b',
+        '--dc-text-primary': '#f1f1f4',
+        '--dc-text-secondary': '#a0a0b8',
+        '--dc-text-tertiary': '#6b6b82',
+        '--dc-border': 'rgba(255, 255, 255, 0.08)',
+        '--dc-border-hover': 'rgba(255, 255, 255, 0.15)',
+        '--dc-primary': '#6366f1',
+        '--dc-primary-hover': '#818cf8',
+        '--dc-success': '#10b981',
+        '--dc-error': '#ef4444',
+        '--dc-warning': '#f59e0b',
+        '--dc-info': '#6366f1'
+      },
+      light: {
+        '--dc-bg-base': '#f5f5f9',
+        '--dc-bg-card': '#ffffff',
+        '--dc-bg-surface': '#f5f5f9', // fallback compatibility
+        '--dc-bg-elevated': '#f0f0f5',
+        '--dc-bg-hover': '#e8e8ef',
+        '--dc-bg-input': '#f8f8fb',
+        '--dc-text-primary': '#1a1a2e',
+        '--dc-text-secondary': '#5c5c6e',
+        '--dc-text-tertiary': '#9898aa',
+        '--dc-border': 'rgba(0, 0, 0, 0.08)',
+        '--dc-border-hover': 'rgba(0, 0, 0, 0.15)',
+        '--dc-primary': '#6366f1',
+        '--dc-primary-hover': '#818cf8',
+        '--dc-success': '#10b981',
+        '--dc-error': '#ef4444',
+        '--dc-warning': '#f59e0b',
+        '--dc-info': '#6366f1'
+      }
+    }
+
+    // ── 入口模式上下文 ──
+    var MODE_CONTEXTS = {
+      standalone: {
+        plugin_id: PLUGIN_ID,
+        drive_id: 0,
+        parent_id: '0',
+        selected_file: null
+      },
+      contextmenu: {
+        plugin_id: PLUGIN_ID,
+        drive_id: 1,
+        parent_id: 'd1',
+        selected_file: {
+          id: 'f1',
+          name: '[BDMV] 灼眼的夏娜 S01E01.mkv',
+          is_dir: false
+        }
+      },
+      widget: {
+        plugin_id: PLUGIN_ID,
+        drive_id: 0,
+        parent_id: '0',
+        selected_file: null
+      }
+    }
+
+    // ── iframe 加载完成后发送 host.init ──
+    iframe.addEventListener('load', function () {
+      var ctx = MODE_CONTEXTS[currentMode]
+      iframe.contentWindow.postMessage({
+        protocol: 'drivecat.plugin.v1',
+        type: 'host.init',
+        payload: {
+          token: 'devrt-token',
+          theme: currentTheme,
+          cssVars: THEMES[currentTheme],
+          context: ctx
+        }
+      }, '*')
+      addLog('init', 'host.init → mode=' + currentMode + ', theme=' + currentTheme)
+    })
+
+    // ── 监听插件消息 ──
+    window.addEventListener('message', function (e) {
+      if (!e.data || e.data.protocol !== 'drivecat.plugin.v1') return
+
+      switch (e.data.type) {
+        case 'plugin.toast':
+          var p = e.data.payload
+          showToast(p.message, p.type || 'info')
+          addLog('toast', '"' + p.message + '" [' + (p.type || 'info') + ']')
+          break
+        case 'plugin.resize':
+          var h = e.data.payload.height
+          iframe.style.height = h + 'px'
+          addLog('resize', 'height=' + h + 'px')
+          break
+        case 'plugin.close':
+          addLog('close', 'Plugin requested close')
+          break
+      }
+    })
+
+    // ── 模式切换 ──
+    var MODE_LABELS = {
+      standalone: '独立入口',
+      contextmenu: '右键入口',
+      widget: '仪表盘卡片'
+    }
+
+    function switchMode(mode) {
+      currentMode = mode
+      document.getElementById('btn-standalone').classList.toggle('active', mode === 'standalone')
+      document.getElementById('btn-contextmenu').classList.toggle('active', mode === 'contextmenu')
+      document.getElementById('btn-widget').classList.toggle('active', mode === 'widget')
+
+      document.body.classList.remove('is-modal', 'is-widget')
+
+      if (mode === 'contextmenu') {
+        document.body.classList.add('is-modal')
+        modalContainer.appendChild(iframe)
+      } else if (mode === 'widget') {
+        document.body.classList.add('is-widget')
+        widgetContainer.appendChild(iframe)
+        iframe.style.height = ''
+      } else {
+        inlineContainer.appendChild(iframe)
+      }
+
+      iframe.src = iframe.src
+      addLog('init', '切换到 ' + MODE_LABELS[mode] + ' 模式')
+    }
+
+    // ── DevTools 切换 ──
+    function toggleDevtools() {
+      var open = document.body.classList.toggle('devtools-open')
+      document.getElementById('btn-devtools').classList.toggle('active', open)
+      try { localStorage.setItem('devrt-devtools-open', open ? '1' : '0') } catch (_) {}
+    }
+
+    // 初始状态：桌面默认开、移动默认关；如果用户手动切过则尊重 localStorage
+    (function initDevtools() {
+      var saved = null
+      try { saved = localStorage.getItem('devrt-devtools-open') } catch (_) {}
+      var open = saved !== null
+        ? saved === '1'
+        : window.matchMedia('(min-width: 769px)').matches
+      if (open) {
+        document.body.classList.add('devtools-open')
+        document.getElementById('btn-devtools').classList.add('active')
+      }
+    })()
+
+    // ── 主题切换 ──
+    function switchTheme(theme) {
+      currentTheme = theme
+      document.documentElement.setAttribute('data-theme', theme)
+      document.getElementById('btn-theme-dark').classList.toggle('active', theme === 'dark')
+      document.getElementById('btn-theme-light').classList.toggle('active', theme === 'light')
+      // reload iframe to inject new theme variables
+      iframe.src = iframe.src
+      addLog('init', '切换到 ' + (theme === 'dark' ? '深色' : '浅色') + ' 主题')
+    }
+
+    // ── Toast ──
+    function showToast(message, type) {
+      var container = document.getElementById('toast-container')
+      var el = document.createElement('div')
+      el.className = 'toast toast-' + (type || 'info')
+      el.textContent = message
+      container.appendChild(el)
+      setTimeout(function () { el.remove() }, 3000)
+    }
+
+    // ── DevTools Log ──
+    function addLog(type, detail) {
+      var log = document.getElementById('devtools-log')
+      var now = new Date()
+      var time = now.toTimeString().slice(0, 8)
+      var entry = document.createElement('div')
+      entry.className = 'log-entry log-' + type
+      entry.innerHTML = '<span class="log-time">' + time + '</span>'
+        + '<span class="log-type">' + type.toUpperCase() + '</span>'
+        + '<span>' + escapeHtml(detail) + '</span>'
+      log.appendChild(entry)
+      log.scrollTop = log.scrollHeight
+    }
+
+    function clearLog() {
+      document.getElementById('devtools-log').innerHTML = ''
+    }
+
+    function escapeHtml(s) {
+      var d = document.createElement('div')
+      d.textContent = s
+      return d.innerHTML
+    }
+
+    // ── 初始日志 ──
+    addLog('init', 'Dev Runtime ready, plugin_id=' + PLUGIN_ID)
+  </script>
+</body>
+</html>

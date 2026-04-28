@@ -8,7 +8,9 @@
   ],
   "permissions": [
     "drive.list",
-    "drive.rename"
+    "drive.rename",
+    "fs.read",
+    "fs.write"
   ],
   "source": "official",
   "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",

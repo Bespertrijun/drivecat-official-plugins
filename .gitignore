@@ -8,4 +8,10 @@ plugin_gap_analysis.md
 keys/
 
 # build.py --dev 同步的副本（源文件在 plugins/_shared/）
-plugins/*/\_shared/
+plugins/*/_shared/
+
+# Plugin Dev Runtime 运行时数据（FileProxy 沙箱）
+devrt_data/
+CLAUDE.md
+.claude/*
+.omc/*
