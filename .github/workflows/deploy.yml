@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉全量历史 + tags，build.py 需要按 tag 重建历史版本
 
       - uses: actions/setup-python@v5
         with:
