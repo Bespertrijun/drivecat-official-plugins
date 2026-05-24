@@ -44,7 +44,11 @@ class MockDrive:
     rename 后内存中真正改名，使预览结果和执行结果一致。
     """
 
-    def __init__(self, files: Optional[List[FileInfo]] = None):
+    def __init__(
+        self,
+        files: Optional[List[FileInfo]] = None,
+        quota: Optional[dict] = None,
+    ):
         # 深拷贝默认列表，防止跨测试污染
         if files is not None:
             self._files = list(files)
@@ -57,6 +61,12 @@ class MockDrive:
                 )
                 for f in DEFAULT_FILES
             ]
+        # 默认 15 TB 总量，已用 ~30%。可按 drive_config_id 在 server 里自定义。
+        self._quota = quota or {"used": 4_500_000_000_000, "total": 15_000_000_000_000}
+
+    async def get_quota(self) -> dict:
+        """返回 `{used, total}` 配额快照。"""
+        return dict(self._quota)
 
     async def list_files(self, parent_id: str) -> List[FileInfo]:
         """列出指定目录下的文件和文件夹。"""

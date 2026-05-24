@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>仪表盘统计</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="dash-card">
+    <!-- Loader -->
+    <div id="loader" class="flex-center">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- 主体内容 -->
+    <div id="content" hidden>
+      <div class="card-head">
+        <i id="header-icon" class="n-icon" style="--n-bezier: cubic-bezier(.4, 0, .2, 1); font-size: 18px;"></i>
+        <span id="header-title"></span>
+      </div>
+
+      <main id="main-area"></main>
+
+      <footer id="footer-stats" class="stats-grid" hidden></footer>
+    </div>
+  </div>
+
+  <script src="../_shared/sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

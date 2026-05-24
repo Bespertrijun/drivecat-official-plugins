@@ -16,8 +16,10 @@ import io
 import os
 import importlib.util
 import json
+import random
 import sys
 import types
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -35,6 +37,45 @@ DATA_DIR = ROOT / "devrt_data"
 _root_str = str(ROOT)
 if _root_str not in sys.path:
     sys.path.insert(0, _root_str)
+
+
+def _build_mock_drive_list():
+    """4 个示例网盘：3 个 google + 1 个 115。"""
+    return [
+        {"id": 1, "name": "我的 GDrive A",      "drive_type": "google", "is_active": True},
+        {"id": 2, "name": "我的 GDrive B",      "drive_type": "google", "is_active": True},
+        {"id": 3, "name": "GDrive 团队盘",      "drive_type": "google", "is_active": True},
+        {"id": 4, "name": "我的 115",           "drive_type": "115",    "is_active": True},
+    ]
+
+
+def _seed_quota_usage(QuotaUsage, drives):
+    """造 730 天 quota_usage 样本（覆盖日/月/年三种聚合视图）。"""
+    rng = random.Random(20260512)  # 固定种子 → 启动间一致
+    today = date.today()
+    rows = []
+    pk = 1
+    days_back = 730
+    for d in drives:
+        # 每盘的"日均量级"做点差异化，看着不一样
+        base_gb = {1: 8, 2: 3, 3: 15, 4: 2}.get(d["id"], 5)
+        for i in range(days_back):
+            day = today - timedelta(days=i)
+            # 在 0.3x~1.7x 之间抖动，周末略多，年度趋势加 1.0 → 1.4 缓慢上升
+            year_trend = 1.0 + 0.4 * (1 - i / days_back)
+            mult = rng.uniform(0.3, 1.7) * (1.3 if day.weekday() >= 5 else 1.0) * year_trend
+            bytes_used = int(base_gb * 1024**3 * mult)
+            upload_count = max(1, int(bytes_used / (200 * 1024**2)))  # 平均 200 MB/文件
+            rows.append(QuotaUsage(
+                id=pk,
+                drive_config_id=d["id"],
+                usage_date=day,
+                bytes_used=bytes_used,
+                upload_count=upload_count,
+                failed_count=rng.randint(0, 2),
+            ))
+            pk += 1
+    return {QuotaUsage: rows}
 
 
 def create_app(plugin_dir: Path) -> FastAPI:
@@ -84,6 +125,17 @@ def create_app(plugin_dir: Path) -> FastAPI:
     sys.modules["app.drives"] = drives_mod
     sys.modules["app.drives.base"] = drives_base_mod
 
+    # 注入 app.models.{quota,watch} — DevRT 仅暴露白名单内的模型类
+    models_mod = types.ModuleType("app.models")
+    models_mod.__path__ = []
+    models_quota_mod = types.ModuleType("app.models.quota")
+    models_quota_mod.QuotaUsage = stubs.QuotaUsage
+    models_watch_mod = types.ModuleType("app.models.watch")
+    models_watch_mod.UploadTask = stubs.UploadTask
+    sys.modules["app.models"] = models_mod
+    sys.modules["app.models.quota"] = models_quota_mod
+    sys.modules["app.models.watch"] = models_watch_mod
+
     # ── 插件目录加入 sys.path ──
     plugin_dir_str = str(plugin_dir)
     if plugin_dir_str not in sys.path:
@@ -96,6 +148,10 @@ def create_app(plugin_dir: Path) -> FastAPI:
     from devrt.mock_drive import MockDrive
     mock_drive = MockDrive()
 
+    # ── DevRT 内置示例：4 个网盘 + 30 天 quota_usage ──
+    mock_drives_list = _build_mock_drive_list()
+    mock_db_store = _seed_quota_usage(stubs.QuotaUsage, mock_drives_list)
+
     # ── 创建 PluginContext ──
     from loguru import logger
     context = stubs.PluginContext(
@@ -105,6 +161,8 @@ def create_app(plugin_dir: Path) -> FastAPI:
         data_dir=str(DATA_DIR),
         logger=logger,
         mock_drive=mock_drive,
+        drives=mock_drives_list,
+        db_store=mock_db_store,
     )
 
     # ── 动态加载插件 main.py ──
@@ -158,14 +216,14 @@ def create_app(plugin_dir: Path) -> FastAPI:
         html = html.replace("__PLUGIN_ID__", plugin_id)
         html = html.replace("__PLUGIN_NAME__", plugin_name)
         html = html.replace("__PLUGIN_VERSION__", manifest.get("version", "dev"))
+        ui_hooks = manifest.get("ui", {}).get("hooks", [])
+        html = html.replace("__UI_HOOKS__", json.dumps(ui_hooks, ensure_ascii=False))
         return HTMLResponse(content=html)
 
-    # Mock Drives API — 裸数组
+    # Mock Drives API — 裸数组（与 list_drives() 同源）
     @app.get("/api/drives/")
     async def list_drives():
-        return JSONResponse(content=[
-            {"id": 1, "name": "测试网盘", "drive_type": "mock"},
-        ])
+        return JSONResponse(content=mock_drives_list)
 
     # Mock Files API — {files: [...]}
     @app.get("/api/drives/{drive_id}/files")

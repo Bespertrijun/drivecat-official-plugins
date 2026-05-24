@@ -1,0 +1,32 @@
+{
+  "name": "仪表盘统计",
+  "author": "DriveCat",
+  "description": "在主页仪表盘展示上传统计与每个 Google Drive 网盘的配额使用情况（周/月/日聚合）",
+  "hooks": [],
+  "permissions": [
+    "drive.list",
+    "drive.config.list",
+    "db.read"
+  ],
+  "source": "official",
+  "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
+  "entry": "main.DashboardStatsPlugin",
+  "ui": {
+    "mode": "iframe",
+    "entry": "ui/index.html",
+    "hooks": [
+      {
+        "position": "dashboard.widget",
+        "label": "上传统计",
+        "icon": "CloudUploadOutline",
+        "match": { "card": "uploads" }
+      },
+      {
+        "position": "dashboard.widget",
+        "label": "网盘配额",
+        "icon": "ServerOutline",
+        "match": { "card": "quotas" }
+      }
+    ]
+  }
+}

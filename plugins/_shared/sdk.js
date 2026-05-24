@@ -108,13 +108,22 @@
      * @param {number} [maxHeight=700] - 最大高度
      */
     resize: function (maxHeight) {
-      var h = document.documentElement.scrollHeight
+      // 测量 body 而非 documentElement——iframe 中 documentElement.scrollHeight
+      // 永远 >= 视口高度，导致 iframe 只涨不缩
+      var body = document.body
+      var prevH = body.style.height
+      var prevO = body.style.overflow
+      body.style.height = '0'
+      body.style.overflow = 'visible'
+      var h = body.scrollHeight
+      body.style.height = prevH
+      body.style.overflow = prevO
       var max = maxHeight || 700
       window.parent.postMessage(
         {
           protocol: 'drivecat.plugin.v1',
           type: 'plugin.resize',
-          payload: { height: Math.min(h + 20, max) },
+          payload: { height: Math.min(h, max) },
         },
         '*'
       )

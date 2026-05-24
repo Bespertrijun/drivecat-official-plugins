@@ -241,9 +241,10 @@
       top: 0; left: 0; right: 0; bottom: 0;
       background: var(--bg);
       z-index: 100;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       padding: 40px;
+      overflow: auto;
     }
     body.is-widget .widget-backdrop {
       display: flex;
@@ -252,28 +253,67 @@
       opacity: 0.15;
       pointer-events: none;
     }
+    /* 模拟主仓 dashboard-grid: grid-template-columns: 1.2fr 1fr */
+    /* 模拟主仓 dashboard-grid */
+    .widget-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 24px;
+      width: 100%;
+      margin: auto 0;
+    }
+    @media (max-width: 768px) {
+      .widget-grid { grid-template-columns: 1fr; }
+    }
     .dc-widget-card {
-      background: var(--bg-card);
-      border-radius: 10px;
-      width: 400px;
-      height: 320px;
+      height: auto;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      border: 1px solid var(--border);
       overflow: hidden;
       position: relative;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
       animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .dc-widget-card::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
+      top: 0; left: 0; right: 0;
       height: 3px;
-      background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+      background: linear-gradient(135deg, #8b5cf6, #a78bfa, #c4b5fd);
       border-radius: 10px 10px 0 0;
+      z-index: 1;
+    }
+    .dc-widget-card.widget-small { max-height: 220px; }
+    .dc-widget-card.widget-large { grid-column: 1 / -1; }
+    .dc-widget-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .dc-widget-head .widget-badge {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: rgba(139, 92, 246, 0.1);
+      color: #8b5cf6;
+    }
+    .dc-widget-card .widget-iframe { min-height: 0; }
+    .widget-grid.swap .dc-widget-card:first-child { order: 2; }
+    .widget-grid.swap .dc-widget-card:last-child  { order: 1; }
+    .widget-iframe {
+      width: 100%;
+      border: none;
+      display: block;
+      background: transparent;
     }
     .dc-widget-header {
       padding: 16px 24px;
@@ -287,9 +327,9 @@
     }
     .dc-widget-body {
       flex: 1;
-      overflow: auto;
-      display: flex;
-      flex-direction: column;
+      min-height: 0;
+      border-radius: 6px;
+      overflow: hidden;
     }
 
     /* ── Modal Area (Context Menu Mode) ── */
@@ -539,7 +579,6 @@
       .modal-backdrop { padding: 0; align-items: flex-end; }
       .dc-widget-card {
         width: 100%;
-        height: 280px;
         border-radius: 10px;
       }
       .widget-backdrop { padding: 16px; }
@@ -597,6 +636,10 @@
           <button class="mode-btn" onclick="switchMode('contextmenu')" id="btn-contextmenu">右键入口 (弹窗)</button>
           <button class="mode-btn" onclick="switchMode('widget')" id="btn-widget">仪表盘 (卡片)</button>
         </div>
+        <div class="mode-switcher" id="pos-switcher" style="display:none;">
+          <button class="mode-btn active" id="btn-pos-left" onclick="swapWidgetPos(false)">左 (1.2fr)</button>
+          <button class="mode-btn" id="btn-pos-right" onclick="swapWidgetPos(true)">右 (1fr)</button>
+        </div>
         <button class="devtools-toggle" onclick="toggleDevtools()" id="btn-devtools">
           <span class="dot"></span> DevTools
         </button>
@@ -616,14 +659,20 @@
         </div>
       </div>
 
-      <!-- Widget Container (Dashboard Widget) -->
+      <!-- Widget Container (Dashboard Widget) — 模拟主仓 dashboard-grid -->
       <div class="widget-backdrop" id="widget-backdrop">
-        <div class="dc-widget-card">
-          <div class="dc-widget-header">
-            __PLUGIN_NAME__
+        <div class="widget-grid" id="widget-grid">
+          <div class="dc-widget-card">
+            <div class="dc-widget-head" id="widget-head-1"></div>
+            <div class="dc-widget-body">
+              <iframe class="widget-iframe" id="widget-iframe-1" src="about:blank"></iframe>
+            </div>
           </div>
-          <div class="dc-widget-body" id="widget-container">
-            <!-- Iframe will be moved here when widget mode is active -->
+          <div class="dc-widget-card">
+            <div class="dc-widget-head" id="widget-head-2"></div>
+            <div class="dc-widget-body">
+              <iframe class="widget-iframe" id="widget-iframe-2" src="about:blank"></iframe>
+            </div>
           </div>
         </div>
       </div>
@@ -678,12 +727,39 @@
 
   <script>
     var PLUGIN_ID = '__PLUGIN_ID__'
+    var UI_HOOKS = __UI_HOOKS__
     var currentMode = 'standalone'
     var currentTheme = 'dark'
     var iframe = document.getElementById('plugin-iframe')
     var inlineContainer = document.getElementById('inline-container')
     var modalContainer = document.getElementById('modal-container')
-    var widgetContainer = document.getElementById('widget-container')
+    var widgetIframe1 = document.getElementById('widget-iframe-1')
+    var widgetIframe2 = document.getElementById('widget-iframe-2')
+    var widgetCard1 = widgetIframe1.closest('.dc-widget-card')
+    var widgetCard2 = widgetIframe2.closest('.dc-widget-card')
+    var WIDGET_SRC = '/devrt/plugin-ui/ui/index.html'
+
+    // 从 manifest ui.hooks 中提取 dashboard.widget 卡片信息
+    var widgetHooks = UI_HOOKS.filter(function (h) { return h.position === 'dashboard.widget' })
+    var hook1 = widgetHooks[0] || {}
+    var hook2 = widgetHooks[1] || {}
+    var WIDGET_CARDS = [
+      { card: (hook1.match || {}).card || 'uploads', size: (hook1.match || {}).size || 'medium' },
+      { card: (hook2.match || {}).card || 'quotas',  size: (hook2.match || {}).size || 'medium' },
+    ]
+
+    function applyWidgetSizes() {
+      var cards = [widgetCard1, widgetCard2]
+      var heads = [document.getElementById('widget-head-1'), document.getElementById('widget-head-2')]
+      var hooks = [hook1, hook2]
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].className = 'dc-widget-card'
+        var s = WIDGET_CARDS[i].size
+        if (s === 'small' || s === 'large') cards[i].classList.add('widget-' + s)
+        heads[i].innerHTML = '<span>' + escapeHtml(hooks[i].label || ('Widget ' + (i + 1))) + '</span>' +
+          '<span class="widget-badge">__PLUGIN_NAME__</span>'
+      }
+    }
 
     // ── DriveCat 主题变量（完整一致） ──
     var THEMES = {
@@ -754,24 +830,48 @@
     }
 
     // ── iframe 加载完成后发送 host.init ──
+    function sendInit(target, ctx) {
+      try {
+        target.contentWindow.postMessage({
+          protocol: 'drivecat.plugin.v1',
+          type: 'host.init',
+          payload: {
+            token: 'devrt-token',
+            theme: currentTheme,
+            cssVars: THEMES[currentTheme],
+            context: ctx
+          }
+        }, '*')
+      } catch (_) {}
+    }
+
     iframe.addEventListener('load', function () {
-      var ctx = MODE_CONTEXTS[currentMode]
-      iframe.contentWindow.postMessage({
-        protocol: 'drivecat.plugin.v1',
-        type: 'host.init',
-        payload: {
-          token: 'devrt-token',
-          theme: currentTheme,
-          cssVars: THEMES[currentTheme],
-          context: ctx
-        }
-      }, '*')
+      sendInit(iframe, MODE_CONTEXTS[currentMode])
       addLog('init', 'host.init → mode=' + currentMode + ', theme=' + currentTheme)
+    })
+
+    widgetIframe1.addEventListener('load', function () {
+      if (currentMode !== 'widget' || widgetIframe1.src.indexOf('about:blank') !== -1) return
+      var ctx = Object.assign({}, MODE_CONTEXTS.widget, { position: 'dashboard.widget', match: hook1.match || {} })
+      sendInit(widgetIframe1, ctx)
+      addLog('init', 'host.init → widget card=' + WIDGET_CARDS[0].card + ' size=' + WIDGET_CARDS[0].size)
+    })
+
+    widgetIframe2.addEventListener('load', function () {
+      if (currentMode !== 'widget' || widgetIframe2.src.indexOf('about:blank') !== -1) return
+      var ctx = Object.assign({}, MODE_CONTEXTS.widget, { position: 'dashboard.widget', match: hook2.match || {} })
+      sendInit(widgetIframe2, ctx)
+      addLog('init', 'host.init → widget card=' + WIDGET_CARDS[1].card + ' size=' + WIDGET_CARDS[1].size)
     })
 
     // ── 监听插件消息 ──
     window.addEventListener('message', function (e) {
       if (!e.data || e.data.protocol !== 'drivecat.plugin.v1') return
+
+      var src = null
+      if (e.source === iframe.contentWindow) src = iframe
+      else if (e.source === widgetIframe1.contentWindow) src = widgetIframe1
+      else if (e.source === widgetIframe2.contentWindow) src = widgetIframe2
 
       switch (e.data.type) {
         case 'plugin.toast':
@@ -781,7 +881,7 @@
           break
         case 'plugin.resize':
           var h = e.data.payload.height
-          iframe.style.height = h + 'px'
+          if (src) src.style.height = h + 'px'
           addLog('resize', 'height=' + h + 'px')
           break
         case 'plugin.close':
@@ -798,25 +898,34 @@
     }
 
     function switchMode(mode) {
+      // 清理上一模式
+      if (currentMode === 'widget') {
+        widgetIframe1.src = 'about:blank'
+        widgetIframe2.src = 'about:blank'
+      }
+
       currentMode = mode
       document.getElementById('btn-standalone').classList.toggle('active', mode === 'standalone')
       document.getElementById('btn-contextmenu').classList.toggle('active', mode === 'contextmenu')
       document.getElementById('btn-widget').classList.toggle('active', mode === 'widget')
 
       document.body.classList.remove('is-modal', 'is-widget')
+      document.getElementById('pos-switcher').style.display = mode === 'widget' ? '' : 'none'
 
       if (mode === 'contextmenu') {
         document.body.classList.add('is-modal')
         modalContainer.appendChild(iframe)
+        iframe.src = iframe.src
       } else if (mode === 'widget') {
         document.body.classList.add('is-widget')
-        widgetContainer.appendChild(iframe)
-        iframe.style.height = ''
+        applyWidgetSizes()
+        widgetIframe1.src = WIDGET_SRC + '?card=' + WIDGET_CARDS[0].card
+        widgetIframe2.src = WIDGET_SRC + '?card=' + WIDGET_CARDS[1].card
       } else {
         inlineContainer.appendChild(iframe)
+        iframe.src = iframe.src
       }
 
-      iframe.src = iframe.src
       addLog('init', '切换到 ' + MODE_LABELS[mode] + ' 模式')
     }
 
@@ -846,8 +955,13 @@
       document.documentElement.setAttribute('data-theme', theme)
       document.getElementById('btn-theme-dark').classList.toggle('active', theme === 'dark')
       document.getElementById('btn-theme-light').classList.toggle('active', theme === 'light')
-      // reload iframe to inject new theme variables
-      iframe.src = iframe.src
+      // reload iframe(s) to inject new theme variables
+      if (currentMode === 'widget') {
+        widgetIframe1.src = WIDGET_SRC + '?card=' + WIDGET_CARDS[0].card
+        widgetIframe2.src = WIDGET_SRC + '?card=' + WIDGET_CARDS[1].card
+      } else {
+        iframe.src = iframe.src
+      }
       addLog('init', '切换到 ' + (theme === 'dark' ? '深色' : '浅色') + ' 主题')
     }
 
@@ -883,6 +997,13 @@
       var d = document.createElement('div')
       d.textContent = s
       return d.innerHTML
+    }
+
+    // ── Widget 位置切换 ──
+    function swapWidgetPos(toRight) {
+      document.getElementById('widget-grid').classList.toggle('swap', toRight)
+      document.getElementById('btn-pos-left').classList.toggle('active', !toRight)
+      document.getElementById('btn-pos-right').classList.toggle('active', toRight)
     }
 
     // ── 初始日志 ──

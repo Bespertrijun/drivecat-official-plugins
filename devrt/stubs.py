@@ -8,6 +8,7 @@ Plugin Dev Runtime — 插件 SDK 存根。
 import hashlib
 import shutil
 from abc import ABC, abstractmethod
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -216,6 +217,194 @@ class FileProxy:
         shutil.rmtree(target)
 
 
+# ── 宿主表模型 + 极简查询引擎（DevRT 专用） ──
+#
+# 生产环境是 SQLAlchemy；DevRT 用一份内存替身，签名兼容到足够插件代码
+# 走相同调用路径（query/filter/order_by/all/first），无需为 dev 写分支。
+
+
+class _ColumnExpr:
+    """列引用 + 比较运算符 → 生成谓词。"""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __eq__(self, other): return _Predicate(self.name, "eq", other)
+    def __ne__(self, other): return _Predicate(self.name, "ne", other)
+    def __ge__(self, other): return _Predicate(self.name, "ge", other)
+    def __gt__(self, other): return _Predicate(self.name, "gt", other)
+    def __le__(self, other): return _Predicate(self.name, "le", other)
+    def __lt__(self, other): return _Predicate(self.name, "lt", other)
+
+    def __hash__(self): return hash(self.name)
+
+
+class _Predicate:
+    __slots__ = ("col", "op", "val")
+
+    def __init__(self, col: str, op: str, val: Any):
+        self.col, self.op, self.val = col, op, val
+
+    def __call__(self, row: Any) -> bool:
+        actual = getattr(row, self.col, None)
+        op = self.op
+        if op == "eq": return actual == self.val
+        if op == "ne": return actual != self.val
+        if op == "ge": return actual is not None and actual >= self.val
+        if op == "gt": return actual is not None and actual >  self.val
+        if op == "le": return actual is not None and actual <= self.val
+        if op == "lt": return actual is not None and actual <  self.val
+        return False
+
+
+class _Column:
+    """描述符：类上访问 → _ColumnExpr；实例上访问 → 实际值。"""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __set_name__(self, owner, name: str):
+        self.name = name
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return _ColumnExpr(self.name)
+        return instance.__dict__.get(self.name)
+
+    def __set__(self, instance, value):
+        instance.__dict__[self.name] = value
+
+
+class _ModelBase:
+    """所有宿主表模型的基类。__init__ 接受 kwargs 写入实例字典。"""
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __repr__(self):
+        keys = [k for k in type(self).__dict__ if isinstance(type(self).__dict__[k], _Column)]
+        vals = ", ".join(f"{k}={getattr(self, k)!r}" for k in keys)
+        return f"{type(self).__name__}({vals})"
+
+
+class QuotaUsage(_ModelBase):
+    """`quota_usage` 表 — 每盘每日上传统计。"""
+
+    id              = _Column("id")
+    drive_config_id = _Column("drive_config_id")
+    usage_date      = _Column("usage_date")
+    bytes_used      = _Column("bytes_used")
+    upload_count    = _Column("upload_count")
+    failed_count    = _Column("failed_count")
+
+
+class UploadTask(_ModelBase):
+    """`upload_tasks` 表 — 单次上传任务（DevRT 仅占位，dashboard-stats 不直接用）。"""
+
+    id                = _Column("id")
+    watch_rule_id     = _Column("watch_rule_id")
+    drive_config_id   = _Column("drive_config_id")
+    upload_target_id  = _Column("upload_target_id")
+    local_path        = _Column("local_path")
+    remote_path       = _Column("remote_path")
+    status            = _Column("status")
+    file_size         = _Column("file_size")
+    file_mtime        = _Column("file_mtime")
+    quota_reserved    = _Column("quota_reserved")
+    error_message     = _Column("error_message")
+    retry_count       = _Column("retry_count")
+    origin_type       = _Column("origin_type")
+    created_at        = _Column("created_at")
+    completed_at      = _Column("completed_at")
+
+
+class _Query:
+    """极简链式查询。仅支持 filter / order_by / all / first / count。"""
+
+    def __init__(self, rows: List[Any]):
+        self._rows = list(rows)
+        self._preds: List[_Predicate] = []
+        self._order: Optional[str] = None
+
+    def filter(self, *preds: _Predicate) -> "_Query":
+        for p in preds:
+            if not isinstance(p, _Predicate):
+                raise TypeError(
+                    f"MockDb filter() got non-predicate {p!r}; only `Column == val` style is supported"
+                )
+            self._preds.append(p)
+        return self
+
+    def order_by(self, expr: _ColumnExpr) -> "_Query":
+        if not isinstance(expr, _ColumnExpr):
+            raise TypeError(f"order_by expects a column expression, got {expr!r}")
+        self._order = expr.name
+        return self
+
+    def _materialize(self) -> List[Any]:
+        out = [r for r in self._rows if all(p(r) for p in self._preds)]
+        if self._order:
+            out.sort(key=lambda r: getattr(r, self._order))
+        return out
+
+    def all(self) -> List[Any]:
+        return self._materialize()
+
+    def first(self) -> Optional[Any]:
+        rows = self._materialize()
+        return rows[0] if rows else None
+
+    def count(self) -> int:
+        return len(self._materialize())
+
+
+# 表级白名单 — 与生产 DbProxy 行为对齐
+_ALLOWED_MODELS = {QuotaUsage, UploadTask}
+
+
+class MockDb:
+    """
+    内存替身 DbProxy。
+
+    构造时接受 `{ModelClass: [rows]}` 映射；query(Model) 返回带过滤/排序的 _Query。
+    add / commit / rollback / close 为 no-op，足够 dashboard 类只读插件。
+    """
+
+    def __init__(self, store: Dict[type, List[Any]], can_read: bool, can_write: bool):
+        self._store = store
+        self._can_read = can_read
+        self._can_write = can_write
+
+    def query(self, model: type) -> _Query:
+        if not self._can_read:
+            raise PermissionError("Plugin does not have 'db.read' permission")
+        if model not in _ALLOWED_MODELS:
+            raise PermissionError(
+                f"DbProxy table whitelist: {model!r} is not in the allowed model list"
+            )
+        return _Query(self._store.get(model, []))
+
+    def add(self, instance: Any) -> None:
+        if not self._can_write:
+            raise PermissionError("Plugin does not have 'db.write' permission")
+        model = type(instance)
+        if model not in _ALLOWED_MODELS:
+            raise PermissionError(f"DbProxy table whitelist: {model!r} is not allowed")
+        self._store.setdefault(model, []).append(instance)
+
+    def delete(self, instance: Any) -> None:
+        if not self._can_write:
+            raise PermissionError("Plugin does not have 'db.write' permission")
+        rows = self._store.get(type(instance), [])
+        if instance in rows:
+            rows.remove(instance)
+
+    def commit(self) -> None: pass
+    def rollback(self) -> None: pass
+    def close(self) -> None: pass
+
+
 # ── 静默钩子分发器 ──
 
 
@@ -253,6 +442,8 @@ class PluginContext:
         data_dir: str,
         logger: Any,
         mock_drive: Any,
+        drives: Optional[List[Dict[str, Any]]] = None,
+        db_store: Optional[Dict[type, List[Any]]] = None,
     ):
         self.plugin_id = plugin_id
         self.permissions = permissions
@@ -261,6 +452,8 @@ class PluginContext:
         self._app = app
         self._data_dir = data_dir
         self._mock_drive = mock_drive
+        self._drives = drives or []
+        self._db_store = db_store or {}
         self._registered_routers: list = []
         self._registered_jobs: list = []
 
@@ -286,11 +479,19 @@ class PluginContext:
         """返回 MockDrive（不区分 drive_config_id）。"""
         return self._mock_drive
 
+    def list_drives(self) -> List[Dict[str, Any]]:
+        """枚举网盘配置（脱敏摘要）。需 `drive.config.list` 权限。"""
+        if "drive.config.list" not in self.permissions:
+            raise PermissionError("Plugin does not have 'drive.config.list' permission")
+        return [dict(d) for d in self._drives]
+
     def get_db(self) -> Any:
-        """DevRT 不提供数据库访问。"""
-        raise NotImplementedError(
-            "Dev Runtime does not provide database access. Use get_fs() for persistence."
-        )
+        """返回 MockDb（白名单表 + 极简查询）。需 `db.read` 或 `db.write` 权限。"""
+        can_read = "db.read" in self.permissions
+        can_write = "db.write" in self.permissions
+        if not can_read and not can_write:
+            raise PermissionError("Plugin does not have 'db.read' or 'db.write' permission")
+        return MockDb(self._db_store, can_read, can_write)
 
     def register_job(self, *args, **kwargs) -> None:
         """静默忽略定时任务注册。"""

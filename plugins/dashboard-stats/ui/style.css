@@ -1,0 +1,404 @@
+/* 宿主只注入 12 个 --dc-* CSS 变量，其它必须硬编码（取自 DriveCat 主仓 variables.css） */
+:root {
+  --dc-radius-sm: 6px;
+  --dc-radius-md: 10px;
+  --dc-radius-lg: 16px;
+  --dc-gap-xs: 4px;
+  --dc-gap-sm: 8px;
+  --dc-gap-md: 16px;
+  --dc-gap-lg: 24px;
+  --dc-gap-xl: 32px;
+  --dc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --dc-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --dc-primary-suppl: #a5b4fc;
+  --dc-border-hover: rgba(255, 255, 255, 0.15);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+/* 修复 `[hidden]` 被 author CSS 的 display 规则覆盖（.flex-center 等） */
+[hidden] { display: none !important; }
+
+html, body, #app { height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: transparent;
+  color: var(--dc-text-primary);
+  overflow: hidden;
+}
+
+/* ── .dash-card 精确复刻主仓 ── */
+.dash-card {
+  background: var(--dc-bg-card);
+  border: 1px solid var(--dc-border);
+  border-radius: var(--dc-radius-md);
+  padding: var(--dc-gap-lg);
+  transition: border-color var(--dc-transition-fast), box-shadow var(--dc-transition-fast), transform var(--dc-transition-fast);
+  opacity: 0;
+  flex-direction: column;
+  animation: cardEnter 0.5s ease-out forwards;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.dash-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--card-accent, linear-gradient(135deg, var(--dc-primary), var(--dc-primary-hover), var(--dc-primary-suppl)));
+  border-radius: var(--dc-radius-md) var(--dc-radius-md) 0 0;
+}
+
+.dash-card:hover {
+  border-color: var(--dc-border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--dc-shadow-md), 0 0 30px rgba(99, 102, 241, 0.06);
+}
+
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+#content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── Header (aligned with host card-head) ── */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--dc-gap-sm);
+  margin-bottom: var(--dc-gap-md);
+}
+
+.card-head > span {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dc-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.n-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1em;
+  width: 1em;
+  line-height: 1em;
+  font-style: normal;
+  color: var(--dc-text-primary);
+  transition: color var(--n-bezier, var(--dc-transition-fast));
+}
+
+.n-icon svg {
+  height: 1em;
+  width: 1em;
+  fill: var(--dc-primary);
+  display: block;
+}
+
+/* ── 上传卡：图表 ── */
+.range-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--dc-bg-elevated);
+  border-radius: var(--dc-radius-sm);
+  align-self: flex-end;
+  margin-bottom: var(--dc-gap-sm);
+}
+
+.range-btn {
+  border: none;
+  background: transparent;
+  color: var(--dc-text-tertiary);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: color var(--dc-transition-fast), background var(--dc-transition-fast);
+}
+
+.range-btn:hover:not(.active) { color: var(--dc-text-secondary); }
+
+.range-btn.active {
+  background: var(--dc-bg-card);
+  color: var(--dc-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.chart-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: var(--dc-gap-md);
+}
+
+.chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--dc-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.18));
+}
+
+.chart-area { pointer-events: none; }
+
+.chart-marker {
+  fill: var(--dc-bg-card);
+  stroke: var(--dc-primary);
+  stroke-width: 2;
+}
+
+.chart-marker-pulse {
+  fill: var(--dc-primary);
+  opacity: 0.25;
+  animation: pulse 1.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.25; }
+  50%      { transform: scale(2);   opacity: 0; }
+}
+
+.chart-label {
+  font-size: 10px;
+  fill: var(--dc-text-tertiary);
+}
+
+/* Tooltip */
+.tooltip-line {
+  stroke: var(--dc-text-tertiary);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
+}
+
+.tooltip-box {
+  fill: var(--dc-bg-elevated);
+  stroke: var(--dc-border);
+  stroke-width: 1;
+}
+
+.tooltip-text {
+  font-size: 10px;
+  fill: var(--dc-text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.hit-area { fill: transparent; }
+
+/* ── 底部 3 列大数字 ── */
+.stats-grid {
+  display: flex;
+  padding-top: var(--dc-gap-sm);
+  border-top: 1px solid var(--dc-border);
+}
+
+.stats-grid.stats-col {
+  flex-direction: column;
+}
+
+.stat-item {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0 2px;
+}
+
+.stat-item + .stat-item {
+  border-left: 1px solid var(--dc-border);
+}
+
+.stat-value {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dc-text-primary);
+  margin-bottom: 2px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--dc-text-tertiary);
+  letter-spacing: 0.5px;
+}
+
+/* ── 配额卡（柱状图） ── */
+.bar-rect {
+  transition: opacity var(--dc-transition-fast);
+}
+.bar-rect:hover { opacity: 1 !important; }
+
+.drive-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: var(--dc-gap-sm);
+}
+
+.drive-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--dc-border);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--dc-text-tertiary);
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--dc-transition-fast);
+  opacity: 0.5;
+}
+
+.drive-chip.active {
+  border-color: var(--chip-color);
+  color: var(--dc-text-primary);
+  opacity: 1;
+}
+
+.drive-chip:hover {
+  border-color: var(--chip-color);
+  opacity: 0.8;
+}
+
+.bar-legend {
+  display: flex;
+  gap: var(--dc-gap-md);
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--dc-text-secondary);
+  margin-bottom: var(--dc-gap-xs);
+}
+
+.bar-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bar-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.quota-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 10px;
+  color: var(--dc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-row-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.quota-row-num {
+  white-space: nowrap;
+  color: var(--dc-text-tertiary);
+}
+
+.quota-row-bar {
+  flex: 1;
+  min-width: 40px;
+}
+
+.progress-track {
+  height: 4px;
+  background: var(--dc-bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--dc-primary), var(--dc-primary-hover));
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.progress-fill.warn   { background: var(--dc-warning); }
+.progress-fill.danger { background: var(--dc-error); }
+
+/* ── 状态 ── */
+.flex-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dc-text-tertiary);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--dc-border);
+  border-top-color: var(--dc-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-text {
+  color: var(--dc-error);
+  font-size: 12px;
+}
+
+/* ── Widget 模式（宿主已提供卡片壳和 header） ── */
+#app.widget-mode {
+  height: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+#app.widget-mode::before { display: none; }
+#app.widget-mode:hover {
+  transform: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.widget-mode .card-head { display: none; }
+.widget-mode .range-toggle { margin-bottom: var(--dc-gap-xs); }
+.widget-mode .drive-chips { margin-bottom: var(--dc-gap-xs); }
+.widget-mode .chart-container { margin-bottom: var(--dc-gap-sm); }
+.widget-mode .stats-grid { padding-top: var(--dc-gap-xs); }
+
+/* ── 响应式 ── */
+@media (max-width: 768px) {
+  .dash-card { padding: var(--dc-gap-md); }
+  .stat-value { font-size: 14px; }
+}

@@ -189,6 +189,37 @@ plugins/
 
 ---
 
+#### `drive.config.list` — 枚举网盘配置
+
+**`list_drives() → List[dict]`**
+
+列出系统中所有网盘配置的脱敏摘要。**不**返回 `config_data`（cookies / tokens / credentials 等敏感信息）。
+
+**返回值：** `List[dict]` — 每项包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | `int` | 网盘配置 ID（用于 `get_drive(id)` 等调用） |
+| `name` | `str` | 用户自定义名称，如 `"我的115"` |
+| `drive_type` | `str` | 网盘类型，如 `"115"`、`"google"` |
+| `is_active` | `bool` | 是否启用 |
+
+```python
+# 示例：列出所有网盘并遍历
+drives = context.list_drives()
+for d in drives:
+    print(f"{d['name']} ({d['drive_type']}) - {'启用' if d['is_active'] else '禁用'}")
+    
+    # 结合 get_drive() 获取文件列表
+    if d['is_active']:
+        drive = await context.get_drive(d['id'])
+        files = await drive.list_files("0")
+```
+
+> **安全说明**：此方法仅返回 id/name/drive_type/is_active 四个字段，不暴露任何凭证信息。
+
+---
+
 #### `fs.read` / `fs.write` — 文件存储
 
 通过 `context.get_fs()` 获取 `FileProxy`。所有操作限制在 `plugin_data/{plugin_id}/` 目录内，防止路径遍历。
@@ -231,6 +262,240 @@ data = json.loads(fs.read_text("config.json"))
 | `close()` | 无 | 关闭连接，始终可用 |
 
 > **推荐**：大多数插件应优先使用 `FileProxy` (`fs.read/fs.write`) 存储自身数据（如模板、配置），仅在需要查询宿主数据表时才使用 `DbProxy`。
+
+> **🔒 安全策略 — 表级白名单**
+>
+> `DbProxy` 采用**白名单机制**，插件只能访问以下 11 张运营数据表。查询或写入其他表会抛出 `PermissionError`。
+>
+> 被禁止的表包括：`users`、`permissions`、`user_permissions`（认证域）、`drive_configs`（含凭证）、`custom_jobs`（用户代码）、`installed_plugins`（安装路径）。
+>
+> 网盘配置请使用 `context.list_drives()` 获取脱敏摘要。
+
+**插件可访问的表：**
+
+| 表名 | 导入路径 | 说明 |
+|------|---------|------|
+| `quota_usage` | `app.models.quota.QuotaUsage` | 每日配额统计 |
+| `upload_tasks` | `app.models.watch.UploadTask` | 上传任务历史 |
+| `transfer_tasks` | `app.models.transfer.TransferTask` | 跨盘转存历史 |
+| `watch_rules` | `app.models.watch.WatchRule` | 监控规则配置 |
+| `upload_targets` | `app.models.watch.UploadTarget` | 上传目标配置 |
+| `sync_rules` | `app.models.sync.SyncRule` | 同步规则 |
+| `sync_snapshots` | `app.models.sync.SyncSnapshot` | 同步快照 |
+| `sync_snapshot_entries` | `app.models.sync.SyncSnapshotEntry` | 快照文件记录 |
+| `balance_rules` | `app.models.balance.BalanceRule` | 均衡规则 |
+| `balance_rule_members` | `app.models.balance.BalanceRuleMember` | 均衡组成员 |
+| `scheduler_runs` | `app.models.scheduler_state.SchedulerJobRun` | 定时任务执行历史 |
+
+<details>
+<summary><b>📦 可访问表的字段详情（点击展开）</b></summary>
+
+> **⚠️ 耦合警告**：直接 `import` 宿主模型会耦合内部实现，宿主表结构升级时插件可能需要跟着改。优先使用 `PluginContext` 提供的高级 API（如 `list_drives()`），仅在需要查询细粒度数据时才走 `DbProxy`。
+
+**导入方式：**
+
+```python
+from app.models.watch import WatchRule, UploadTarget, UploadTask
+from app.models.transfer import TransferTask
+from app.models.sync import SyncRule, SyncSnapshot, SyncSnapshotEntry
+from app.models.balance import BalanceRule, BalanceRuleMember
+from app.models.quota import QuotaUsage
+from app.models.scheduler_state import SchedulerJobRun
+```
+
+---
+
+##### 监控规则 — `watch_rules`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 规则 ID |
+| `name` | `str(100)` | 规则名称 |
+| `local_path` | `str(500)` | 监控的本地目录路径 |
+| `exclude_patterns` | `str(500)?` | 排除的文件模式（glob） |
+| `delete_excluded` | `bool` | 是否删除被排除的文件 |
+| `existing_files_policy` | `str(20)` | 启动时已存在文件的处理策略：`keep` / `upload` |
+| `post_action` | `str(20)` | 上传后处理：`keep` / `delete` / `move` |
+| `archive_path` | `str(500)?` | move 模式的归档路径 |
+| `is_enabled` | `bool` | 是否启用 |
+
+**关系**：`WatchRule.targets` → `List[UploadTarget]`（1:N）
+
+##### 上传目标 — `upload_targets`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 目标 ID |
+| `watch_rule_id` | `int` FK | 所属监控规则 |
+| `target_type` | `str(20)` | `"drive"` 单盘 / `"balance_group"` 均衡组 |
+| `drive_config_id` | `int?` | 单盘模式的网盘 ID |
+| `balance_rule_id` | `int?` | 均衡组模式的规则 ID |
+| `remote_path` | `str(500)` | 远程上传路径 |
+| `is_enabled` | `bool` | 是否启用 |
+
+##### 上传任务 — `upload_tasks`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 任务 ID |
+| `watch_rule_id` | `int` | 所属监控规则 |
+| `drive_config_id` | `int?` | 目标网盘 |
+| `upload_target_id` | `int?` | 对应的 UploadTarget |
+| `local_path` | `str(500)` | 本地文件路径 |
+| `remote_path` | `str(500)` | 远程路径 |
+| `status` | `str(20)` | `pending` / `running` / `success` / `failed` / `skipped` / `quota_pending` |
+| `file_size` | `int` | 文件大小（字节） |
+| `file_mtime` | `float` | 文件修改时间戳 |
+| `quota_reserved` | `bool` | 是否已预扣配额 |
+| `error_message` | `text?` | 失败原因 |
+| `retry_count` | `int` | 重试次数 |
+| `origin_type` | `str(20)` | 来源类型 `"watcher"` / `"reconcile"` |
+| `created_at` / `completed_at` | `datetime` | 创建/完成时间 |
+
+---
+
+##### 跨盘转存 — `transfer_tasks`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 任务 ID |
+| `source_drive_id` | `int` | 源网盘 |
+| `target_drive_id` | `int?` | 目标网盘（均衡组时为空） |
+| `source_path` / `target_path` | `str(500)` | 源/目标路径 |
+| `source_file_id` | `str(200)?` | 源文件 ID |
+| `filename` | `str(300)` | 文件名 |
+| `status` | `str(20)` | `pending` / `running` / `downloading` / `uploading` / `success` / `failed` / `quota_pending` |
+| `file_size` | `int` | 文件大小 |
+| `source_mtime` | `float?` | 源文件修改时间 |
+| `bytes_transferred` | `int` | 已传输字节 |
+| `quota_reserved` | `bool` | 是否已预扣配额 |
+| `error_message` | `text?` | 失败原因 |
+| `sync_rule_id` | `int?` | 关联的同步规则（由同步触发时） |
+| `balance_rule_id` | `int?` | 关联的均衡规则 |
+| `origin_type` | `str(20)` | `"manual"` / `"sync_mirror"` / `"sync_one_way"` 等 |
+| `created_at` / `completed_at` | `datetime` | 创建/完成时间 |
+
+---
+
+##### 同步规则 — `sync_rules`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 规则 ID |
+| `name` | `str(100)` | 规则名称 |
+| `source_drive_id` | `int` | 源网盘 |
+| `target_type` | `str(20)` | `"drive"` / `"balance_group"` |
+| `target_drive_id` | `int?` | 目标网盘 |
+| `balance_rule_id` | `int?` | 均衡组 ID |
+| `source_path` / `target_path` | `str(500)` | 源/目标路径 |
+| `sync_direction` | `str(20)` | `mirror` / `one_way` / `bidirectional` |
+| `sync_scope` | `str(20)` | `full` / `incremental` |
+| `conflict_policy` | `str(20)` | `newer_wins` / `source_wins` / `target_wins` / `keep_both` |
+| `cron_expr` | `str(100)?` | CRON 表达式（定时同步） |
+| `is_enabled` | `bool` | 是否启用 |
+| `last_synced_at` | `datetime?` | 上次同步时间 |
+
+**关系**：`SyncRule.snapshots` → `List[SyncSnapshot]`
+
+##### 同步快照 — `sync_snapshots` / `sync_snapshot_entries`
+
+`SyncSnapshot`：
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 快照 ID |
+| `sync_rule_id` | `int` | 所属同步规则 |
+| `is_latest` | `bool` | 是否为最新快照 |
+| `change_token` | `str(200)?` | Changes API token |
+| `created_at` | `datetime` | 快照创建时间 |
+
+`SyncSnapshotEntry`（快照内的文件记录）：
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 条目 ID |
+| `snapshot_id` | `int` | 所属快照 |
+| `relative_path` | `str(500)` | 相对路径 |
+| `file_id` | `str(200)` | 文件 ID |
+| `file_size` | `int` | 文件大小 |
+| `modified_at` | `float?` | 修改时间戳 |
+
+---
+
+##### 负载均衡 — `balance_rules` / `balance_rule_members`
+
+`BalanceRule`：
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 规则 ID |
+| `name` | `str(100)` | 规则名称 |
+| `strategy` | `str(20)` | `round_robin` / `quota_first` / `weighted` |
+| `is_enabled` | `bool` | 是否启用 |
+
+**关系**：`BalanceRule.members` → `List[BalanceRuleMember]`
+
+`BalanceRuleMember`：
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 成员 ID |
+| `balance_rule_id` | `int` | 所属规则 |
+| `drive_config_id` | `int` | 网盘配置 ID |
+| `weight` | `float` | 权重（weighted 策略使用） |
+| `is_enabled` | `bool` | 是否启用 |
+
+---
+
+##### 每日配额 — `quota_usage`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 记录 ID |
+| `drive_config_id` | `int` | 网盘配置 ID |
+| `usage_date` | `date` | 日期（每日每盘一行） |
+| `bytes_used` | `int` | 当日已上传字节数 |
+| `upload_count` | `int` | 当日成功上传文件数 |
+| `failed_count` | `int` | 当日失败次数 |
+
+**唯一约束**：`(drive_config_id, usage_date)`
+
+> 💡 历史记录不会自动清理，可按日期范围查询用量趋势。
+
+```python
+# 示例：查询某网盘最近 7 天的上传用量
+from datetime import date, timedelta
+from app.models.quota import QuotaUsage
+
+db = context.get_db()
+week_ago = date.today() - timedelta(days=7)
+rows = db.query(QuotaUsage).filter(
+    QuotaUsage.drive_config_id == 1,
+    QuotaUsage.usage_date >= week_ago,
+).order_by(QuotaUsage.usage_date).all()
+
+for r in rows:
+    print(f"{r.usage_date}: {r.bytes_used / 1024**3:.1f} GB, {r.upload_count} files")
+db.close()
+```
+
+---
+
+##### 定时任务执行历史 — `scheduler_runs`
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| `id` | `int` PK | 记录 ID |
+| `job_id` | `str(128)` | 任务 ID |
+| `job_name` | `str(255)` | 任务名称 |
+| `ran_at` | `datetime` | 执行时间 |
+| `success` | `bool` | 是否成功 |
+| `error` | `text?` | 错误信息 |
+
+> 自动保留每个 job 最近 10 条执行记录。
+
+</details>
+
 
 #### 数据模型
 
@@ -355,6 +620,14 @@ async def handler(ctx: HookContext) -> Optional[HookContext]:
 | `on_startup` / `on_shutdown` | 系统启停 | 无 |
 | `on_error` | 错误发生 | 无 |
 
+#### context.list_drives() — 枚举网盘配置
+
+```python
+# 需声明 drive.config.list 权限
+drives = context.list_drives()
+# → [{"id": 1, "name": "我的115", "drive_type": "115", "is_active": True}, ...]
+```
+
 #### context.get_drive() — 获取网盘实例
 
 ```python
@@ -437,12 +710,61 @@ db.close()
 | `ui.mode` | 目前只支持 `"iframe"` |
 | `ui.entry` | 入口 HTML 文件，相对于插件目录 |
 | `ui.hooks` | UI 挂载点列表 |
-| `ui.hooks[].position` | 挂载位置，如 `"file.context_menu"` (右键菜单)、`"dashboard.widget"` |
+| `ui.hooks[].position` | 挂载位置：`"file.context_menu"` (右键菜单)、`"dashboard.widget"` (仪表盘卡片) |
 | `ui.hooks[].label` | 菜单/按钮文字 |
 | `ui.hooks[].icon` | ionicons5 图标名，如 `"CreateOutline"` |
-| `ui.hooks[].match` | 过滤条件，如 `{"is_dir": true}` 只在目录上显示。空对象 `{}` 表示不过滤 |
+| `ui.hooks[].match` | 过滤/分流条件。右键菜单用 `{"is_dir": true}` 过滤文件类型；仪表盘用 `{"card": "xxx"}` 区分多卡（见下文） |
 
-#### 5.2 通信协议 (`drivecat.plugin.v1`)
+#### 5.2 仪表盘多卡插件 (`dashboard.widget`)
+
+一个插件可注册多个 `dashboard.widget` hook，每个 hook 用 `match.card` 区分卡片类型。宿主为每张卡片创建独立 iframe，通过 `host.init` 的 `context.match.card` 告知插件应渲染哪张卡。
+
+```json
+{
+  "ui": {
+    "mode": "iframe",
+    "entry": "ui/index.html",
+    "hooks": [
+      {
+        "position": "dashboard.widget",
+        "label": "上传统计",
+        "icon": "CloudUploadOutline",
+        "match": { "card": "uploads" }
+      },
+      {
+        "position": "dashboard.widget",
+        "label": "网盘配额",
+        "icon": "ServerOutline",
+        "match": { "card": "quotas" }
+      }
+    ]
+  }
+}
+```
+
+**Widget 模式下宿主与插件的职责分界：**
+
+| 层 | 由谁渲染 | 内容 |
+|---|---------|------|
+| 卡片壳（`.dash-card`） | 宿主 | border / border-radius / accent bar / padding |
+| 卡片头（`.card-head`） | 宿主 | 图标 + label + 插件名 badge |
+| 卡片体（`.widget-body`） | 宿主 | 仅是一个 flex 容器，内嵌 `<PluginFrame>` iframe |
+| iframe 内容 | 插件 | 图表、数据列表等实际内容 |
+
+插件通过 `context.position` 检测是否处于 widget 模式，并跳过自身的卡片壳和 header 渲染：
+
+```javascript
+DriveCat.onInit(function (ctx) {
+  if (ctx.position === 'dashboard.widget') {
+    document.getElementById('app').classList.add('widget-mode')
+  }
+  var card = ctx.match && ctx.match.card  // 'uploads' 或 'quotas'
+})
+```
+
+**Widget 尺寸**：宿主根据 `match.size`（`"small"` / `"medium"` / `"large"`，默认 `"medium"`）决定卡片在 grid 中的大小。`"large"` 会占满整行（`grid-column: 1 / -1`）。
+
+#### 5.3 通信协议 (`drivecat.plugin.v1`)
 
 插件 UI 运行在 iframe 沙箱中，通过 `postMessage` 与宿主通信。协议名：`drivecat.plugin.v1`。
 
@@ -503,7 +825,7 @@ db.close()
 | `plugin.resize` | `{ height }` | 通知宿主调整 iframe 高度 |
 | `plugin.close` | — | 通知宿主关闭插件面板 |
 
-#### 5.3 使用共享 SDK
+#### 5.4 使用共享 SDK
 
 本仓库提供了 `plugins/_shared/sdk.js`，封装了上述通信协议。引入后即可使用：
 
@@ -535,7 +857,7 @@ SDK 会自动处理：
 - CSS 变量注入（宿主主题同步）
 - API 请求鉴权（Bearer token）
 
-#### 5.4 插件 API 路由
+#### 5.5 插件 API 路由
 
 插件在 `on_load` 中通过 `context.register_router()` 注册的路由，最终路径为：
 
@@ -563,6 +885,8 @@ python devrt/server.py plugins/rename
 # → 🐱 Plugin Dev Runtime — http://localhost:9000
 ```
 
+> **切换插件**：把第一个参数换成目标插件目录即可（如 `python devrt/server.py plugins/dashboard-stats`）。同进程不支持热切换，需重启；想同时跑多个插件，开多个终端 + 不同 `--port`。
+
 打开浏览器即可看到：
 - **中央**：插件 UI（iframe 嵌入，自动注入 DriveCat 暗色主题变量）
 - **DevTools 面板**：实时显示 Toast、Resize、API 调用日志（默认桌面展开、移动端折叠，header 上的 `DevTools` 按钮随时切换）
@@ -574,9 +898,9 @@ python devrt/server.py plugins/rename
 |------|---------------|---------|---------|
 | **独立入口（全屏）** | `PluginRuntimeView` (`/plugin-runtime/:id`) | 全宽 iframe，圆角 16px | 用户从插件列表点击进入插件主页面 |
 | **右键入口（弹窗）** | `FileBrowser` 的 `n-modal` | 800×85vh modal，圆角 16px | 用户在文件上右键触发 `file.context_menu` |
-| **仪表盘卡片** | `dashboard.widget`（前瞻模拟） | 400×320 卡片，圆角 10px，3px 渐变顶条 | 仪表盘上的小组件 |
+| **仪表盘卡片** | `dashboard.widget` | dashboard grid 卡片（宿主提供卡片壳） | 仪表盘上的小组件，支持多卡（见 §5.2） |
 
-> 容器尺寸、圆角、阴影、CSS 变量与真实 DriveCat 主应用一一对齐，验证插件 UI 在三种宿主形态下的适配效果。`dashboard.widget` 后端已定义但 DriveCat 前端尚未实装，DevRT 提前模拟便于插件作者预先适配。
+> 容器尺寸、圆角、阴影、CSS 变量与真实 DriveCat 主应用一一对齐。DevRT 的仪表盘模式同时渲染两张卡片（对应多卡插件的 `uploads` / `quotas`），并支持左右位置互换以验证不同 grid 列宽下的适配效果。
 
 ### Dev Runtime 提供的能力
 
