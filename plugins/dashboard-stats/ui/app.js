@@ -446,23 +446,7 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     })
 
-    // Footer: 选中 drive 的上传量汇总（日/周/月）
-    UI.footer.hidden = false
-    UI.footer.classList.add('stats-col')
-    var footerHtml = ''
-    for (var fi = 0; fi < dc; fi++) {
-      var d = visibleDrives[fi]
-      var up = d.uploaded || {}
-      footerHtml +=
-        '<div class="quota-row">' +
-          '<span class="bar-legend-dot" style="background:' + visibleColors[fi] + '"></span>' +
-          '<span class="quota-row-name">' + escapeHtml(d.name) + '</span>' +
-          '<span class="quota-row-num">日 ' + formatBytes(up.day || 0) +
-            ' · 周 ' + formatBytes(up.week || 0) +
-            ' · 月 ' + formatBytes(up.month || 0) + '</span>' +
-        '</div>'
-    }
-    UI.footer.innerHTML = footerHtml
+    UI.footer.hidden = true
 
     bindQuotaRangeToggle()
     bindDriveChips()
