@@ -245,8 +245,14 @@ body {
 }
 
 /* ── 配额卡（柱状图） ── */
+@keyframes barGrow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
 .bar-rect {
   transition: opacity var(--dc-transition-fast);
+  transform-origin: bottom;
+  animation: barGrow 0.5s ease-out both;
 }
 .bar-rect:hover { opacity: 1 !important; }
 
