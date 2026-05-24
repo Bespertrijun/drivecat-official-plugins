@@ -951,7 +951,7 @@ git tag rename/v1.0.0
 # 发布 1.1.0
 git tag rename/v1.1.0
 
-# 推送 tag
+# 推送 tag（会自动触发 CI 构建和部署）
 git push origin --tags
 ```
 
@@ -964,6 +964,25 @@ git push origin --tags
 **没有 tag 的插件会被跳过**，build.py 会提示创建 tag。
 
 构建时 zip 包内的 `manifest.json` 会被自动写入 tag 对应的版本号，运行时 `get_meta()` 返回的版本与市场一致。
+
+### CI 触发机制
+
+GitHub Actions 在以下两种情况触发构建和部署：
+
+| 触发条件 | 场景 |
+|---------|------|
+| push 到 `main` 分支 | 代码变更后重建所有已有 tag 的插件（如 build.py 本身改了） |
+| push 符合 `*/v*` 的 tag | 新插件/新版本发布，立即上线 |
+
+**发布新插件的完整流程：**
+
+```bash
+# 1. 开发完成，代码已在 main 上
+# 2. 打 tag
+git tag dashboard-stats/v1.0.0
+# 3. 推送 tag → CI 自动构建部署
+git push origin dashboard-stats/v1.0.0
+```
 
 ### Changelog 自动生成
 
