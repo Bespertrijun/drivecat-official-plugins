@@ -336,7 +336,7 @@
     }
 
     // 坐标系
-    var W = 400, H = 140
+    var W = 400, H = 220
     var pad = { top: 10, right: 8, bottom: 18, left: 8 }
     var iw = W - pad.left - pad.right
     var ih = H - pad.top - pad.bottom
