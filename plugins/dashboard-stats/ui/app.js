@@ -45,6 +45,7 @@
 
   // 全局状态
   var STATE = { range: 'day', quotaRange: 'day', selectedDrives: null, quotaData: null }
+  var CACHE = { uploads: {}, quotas: {} }
 
 
   // ── 数字增长动画 ──
@@ -259,8 +260,10 @@
   }
 
   function reloadUploads() {
-    DriveCat.api('GET', '/stats/uploads?range=' + STATE.range)
-      .then(renderUploads)
+    var r = STATE.range
+    if (CACHE.uploads[r]) { renderUploads(CACHE.uploads[r]); return }
+    DriveCat.api('GET', '/stats/uploads?range=' + r)
+      .then(function (data) { CACHE.uploads[r] = data; renderUploads(data) })
       .catch(function (err) {
         console.error('[dashboard-stats]', err)
         showError('加载失败：' + (err && err.message ? err.message : err))
@@ -483,8 +486,10 @@
   }
 
   function reloadQuotas() {
-    DriveCat.api('GET', '/stats/quotas?range=' + STATE.quotaRange)
-      .then(renderQuotas)
+    var r = STATE.quotaRange
+    if (CACHE.quotas[r]) { renderQuotas(CACHE.quotas[r]); return }
+    DriveCat.api('GET', '/stats/quotas?range=' + r)
+      .then(function (data) { CACHE.quotas[r] = data; renderQuotas(data) })
       .catch(function (err) {
         console.error('[dashboard-stats]', err)
         showError('加载失败：' + (err && err.message ? err.message : err))
@@ -508,6 +513,17 @@
   }
 
   // ── 主流程 ──
+  function prefetchAll(card) {
+    var base = card === 'quotas' ? '/stats/quotas' : '/stats/uploads'
+    var cache = card === 'quotas' ? CACHE.quotas : CACHE.uploads
+    ;['day', 'month', 'year'].forEach(function (r) {
+      if (cache[r]) return
+      DriveCat.api('GET', base + '?range=' + r)
+        .then(function (data) { cache[r] = data })
+        .catch(function () {})
+    })
+  }
+
   DriveCat.onInit(function (ctx) {
     var isWidget = ctx && ctx.position === 'dashboard.widget'
     if (isWidget) {
@@ -517,16 +533,18 @@
     }
 
     var card = resolveCard(ctx) || 'uploads'
-    var path = card === 'quotas'
-      ? '/stats/quotas?range=' + STATE.quotaRange
-      : '/stats/uploads?range=' + STATE.range
+    var range = card === 'quotas' ? STATE.quotaRange : STATE.range
+    var path = (card === 'quotas' ? '/stats/quotas' : '/stats/uploads') + '?range=' + range
 
     DriveCat.api('GET', path)
       .then(function (data) {
+        var cache = card === 'quotas' ? CACHE.quotas : CACHE.uploads
+        cache[range] = data
         UI.loader.hidden = true
         UI.content.hidden = false
         if (card === 'quotas') renderQuotas(data)
         else renderUploads(data)
+        prefetchAll(card)
       })
       .catch(function (err) {
         console.error('[dashboard-stats]', err)
