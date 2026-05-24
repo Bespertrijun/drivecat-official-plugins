@@ -3,12 +3,11 @@
 
 API 端点：
   GET /stats/uploads    — 跨所有网盘聚合：今日 / 本周 / 本月上传字节数
-  GET /stats/quotas     — 每个 Google Drive 当前配额 + 同三档时间窗的上传字节数
+  GET /stats/quotas     — 每个网盘的 day/week/month 上传量 + 按 range 聚合的序列
 
 数据源：
   - quota_usage (app.models.quota.QuotaUsage)  —— 每盘每日上传统计
-  - context.list_drives()                       —— 网盘列表（按 drive_type=google 过滤）
-  - drive.get_quota()                           —— 当前 used/total 快照
+  - context.list_drives()                       —— 网盘列表
 """
 
 import json
@@ -179,20 +178,17 @@ class DashboardStatsPlugin(PluginInterface):
             range: str = Query("day", pattern="^(day|month|year)$",
                                description="聚合粒度：day / month / year"),
         ):
-            """每个 Google Drive：当前配额 + day/week/month 上传量 + 按 range 聚合的序列。"""
+            """每个网盘的 day/week/month 上传量 + 按 range 聚合的序列。"""
             today = date.today()
             window_start = _range_window(today, range)
             month_start = today - timedelta(days=29)
             totals_start = min(window_start, month_start)
 
-            all_drives = context.list_drives()
-            gd_drives = [d for d in all_drives
-                         if d.get("drive_type") == "google" and d.get("is_active")]
-
-            if not gd_drives:
+            all_drives = [d for d in context.list_drives() if d.get("is_active")]
+            if not all_drives:
                 return {"today": today.isoformat(), "range": range, "drives": []}
 
-            gd_ids = {d["id"] for d in gd_drives}
+            drive_ids = {d["id"] for d in all_drives}
             bucket_keys = _all_buckets(today, range)
 
             db = context.get_db()
@@ -204,13 +200,13 @@ class DashboardStatsPlugin(PluginInterface):
                 db.close()
 
             by_drive: Dict[int, Dict[str, int]] = {
-                d["id"]: {"day": 0, "week": 0, "month": 0} for d in gd_drives
+                d["id"]: {"day": 0, "week": 0, "month": 0} for d in all_drives
             }
             series_by_drive: Dict[int, Dict[date, int]] = {
-                d["id"]: {k: 0 for k in bucket_keys} for d in gd_drives
+                d["id"]: {k: 0 for k in bucket_keys} for d in all_drives
             }
             for r in rows:
-                if r.drive_config_id not in gd_ids:
+                if r.drive_config_id not in drive_ids:
                     continue
                 size = int(r.bytes_used or 0)
                 if r.usage_date >= window_start:
@@ -221,22 +217,11 @@ class DashboardStatsPlugin(PluginInterface):
                     by_drive[r.drive_config_id][w] += size
 
             result = []
-            for d in gd_drives:
-                drive = await context.get_drive(d["id"])
-                try:
-                    q = await drive.get_quota()
-                except Exception as exc:
-                    context.logger.warning(
-                        f"[dashboard-stats] get_quota({d['id']}) failed: {exc}"
-                    )
-                    q = {"used": 0, "total": 0}
-
+            for d in all_drives:
                 result.append({
                     "id":          d["id"],
                     "name":        d["name"],
                     "drive_type":  d["drive_type"],
-                    "used":        int(q.get("used", 0) or 0),
-                    "total":       int(q.get("total", 0) or 0),
                     "uploaded":    by_drive[d["id"]],
                     "series":      [{"date": k.isoformat(),
                                      "bytes": series_by_drive[d["id"]][k]}

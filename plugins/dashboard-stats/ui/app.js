@@ -271,7 +271,7 @@
   var BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
   function renderQuotas(data) {
-    UI.title.textContent = '网盘配额'
+    UI.title.textContent = '网盘上传统计'
     UI.icon.innerHTML = ICONS.drive
 
     var range = data.range || STATE.quotaRange
@@ -280,7 +280,7 @@
 
     var allDrives = data.drives || []
     if (allDrives.length === 0) {
-      UI.main.innerHTML = '<div class="flex-center">暂无 Google Drive 网盘</div>'
+      UI.main.innerHTML = '<div class="flex-center">暂无网盘数据</div>'
       UI.footer.hidden = true
       return
     }
@@ -446,32 +446,23 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     })
 
-    // Footer: 选中 drive 的配额进度条
+    // Footer: 选中 drive 的上传量汇总（日/周/月）
     UI.footer.hidden = false
     UI.footer.classList.add('stats-col')
     var footerHtml = ''
     for (var fi = 0; fi < dc; fi++) {
       var d = visibleDrives[fi]
-      var pct = d.total > 0 ? Math.round((d.used / d.total) * 1000) / 10 : 0
-      var fillCls = pct >= 90 ? ' danger' : pct >= 75 ? ' warn' : ''
+      var up = d.uploaded || {}
       footerHtml +=
         '<div class="quota-row">' +
           '<span class="bar-legend-dot" style="background:' + visibleColors[fi] + '"></span>' +
           '<span class="quota-row-name">' + escapeHtml(d.name) + '</span>' +
-          '<span class="quota-row-num">' + formatBytes(d.used) + ' / ' + formatBytes(d.total) + '</span>' +
-          '<div class="progress-track quota-row-bar">' +
-            '<div class="progress-fill' + fillCls + '" data-w="' + Math.min(100, pct) + '%"></div>' +
-          '</div>' +
+          '<span class="quota-row-num">日 ' + formatBytes(up.day || 0) +
+            ' · 周 ' + formatBytes(up.week || 0) +
+            ' · 月 ' + formatBytes(up.month || 0) + '</span>' +
         '</div>'
     }
     UI.footer.innerHTML = footerHtml
-
-    window.setTimeout(function () {
-      var fills = UI.footer.querySelectorAll('.progress-fill')
-      for (var i = 0; i < fills.length; i++) {
-        fills[i].style.width = fills[i].getAttribute('data-w')
-      }
-    }, 80)
 
     bindQuotaRangeToggle()
     bindDriveChips()

@@ -4,7 +4,6 @@
   "description": "在主页仪表盘展示上传统计与每个 Google Drive 网盘的配额使用情况（周/月/日聚合）",
   "hooks": [],
   "permissions": [
-    "drive.list",
     "drive.config.list",
     "db.read"
   ],
@@ -23,7 +22,7 @@
       },
       {
         "position": "dashboard.widget",
-        "label": "网盘配额",
+        "label": "网盘上传统计",
         "icon": "ServerOutline",
         "match": { "card": "quotas" }
       }
