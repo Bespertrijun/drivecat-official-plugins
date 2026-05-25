@@ -197,12 +197,17 @@
     line.style.transition = 'stroke-dashoffset 0.8s ease-out'
     line.style.strokeDashoffset = '0'
 
-    // Tooltip (mousemove on desktop, touch on mobile — matches host pattern)
+    // Tooltip
     var svg = UI.main.querySelector('svg')
     var tip = document.getElementById('tip')
     var tipLine = document.getElementById('tip-line')
     var tipBg = document.getElementById('tip-bg')
     var tipText = document.getElementById('tip-text')
+
+    // HTML overlay for touch/click (Chrome Android ignores SVG events in iframes)
+    var overlay = document.createElement('div')
+    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer'
+    UI.main.querySelector('.chart-container').appendChild(overlay)
 
     function showTip(best) {
       tip.style.visibility = 'visible'
@@ -232,9 +237,9 @@
     }
 
     var pinned = false
-    svg.addEventListener('mousedown', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
-    svg.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
-    svg.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
+    overlay.addEventListener('click', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
+    overlay.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
+    overlay.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -461,10 +466,14 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     }
 
+    var barOverlay = document.createElement('div')
+    barOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer'
+    UI.main.querySelector('.chart-container').appendChild(barOverlay)
+
     var barPinned = false
-    svg.addEventListener('mousedown', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
-    svg.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
-    svg.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
+    barOverlay.addEventListener('click', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
+    barOverlay.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
+    barOverlay.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
 
     UI.footer.hidden = true
 
