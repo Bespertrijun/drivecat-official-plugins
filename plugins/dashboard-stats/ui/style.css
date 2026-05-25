@@ -149,6 +149,7 @@ body {
   display: block;
   overflow: visible;
   touch-action: none;
+  cursor: pointer;
 }
 
 .chart-line {
