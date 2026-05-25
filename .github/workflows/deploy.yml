@@ -5,6 +5,10 @@ on:
     tags: ['*/v*']
   workflow_dispatch:
 
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pages: write

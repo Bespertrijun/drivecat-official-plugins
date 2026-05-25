@@ -55,6 +55,17 @@ def _sign(data: bytes, private_key) -> bytes:
 # ── 版本号：基于 git tag ──
 
 
+def _parse_semver(v: str) -> Tuple[int, ...]:
+    """将 '1.2.3' 解析为 (1, 2, 3) 用于比较。非数字部分按 0 处理。"""
+    parts = []
+    for p in v.split("."):
+        try:
+            parts.append(int(p))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
+
+
 def _get_tags_for_plugin(plugin_name: str) -> List[Tuple[str, str]]:
     """
     获取某插件的所有 git tags，按语义版本降序排列。
@@ -65,7 +76,7 @@ def _get_tags_for_plugin(plugin_name: str) -> List[Tuple[str, str]]:
     prefix = f"{plugin_name}/v"
     try:
         result = subprocess.run(
-            ["git", "tag", "--list", f"{prefix}*", "--sort=-v:refname"],
+            ["git", "tag", "--list", f"{prefix}*"],
             capture_output=True, text=True, cwd=ROOT,
             encoding="utf-8", errors="replace",
         )
@@ -77,6 +88,7 @@ def _get_tags_for_plugin(plugin_name: str) -> List[Tuple[str, str]]:
             if tag.startswith(prefix):
                 version = tag[len(prefix):]
                 tags.append((tag, version))
+        tags.sort(key=lambda t: _parse_semver(t[1]), reverse=True)
         return tags
     except FileNotFoundError:
         return []
