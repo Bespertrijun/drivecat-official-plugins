@@ -231,11 +231,10 @@
       return best
     }
 
-    svg.addEventListener('mousemove', function (e) { showTip(findNearestByClientX(e.clientX)) })
-    svg.addEventListener('mouseleave', function () { tip.style.visibility = 'hidden' })
-    svg.addEventListener('touchstart', function (e) { e.preventDefault(); showTip(findNearestByClientX(e.touches[0].clientX)) }, { passive: false })
-    svg.addEventListener('touchmove', function (e) { e.preventDefault(); showTip(findNearestByClientX(e.touches[0].clientX)) }, { passive: false })
-    svg.addEventListener('touchend', function () { tip.style.visibility = 'hidden' })
+    var clicked = false
+    svg.addEventListener('mousemove', function (e) { if (!clicked) showTip(findNearestByClientX(e.clientX)) })
+    svg.addEventListener('mouseleave', function () { if (!clicked) tip.style.visibility = 'hidden' })
+    svg.addEventListener('click', function (e) { clicked = true; showTip(findNearestByClientX(e.clientX)) })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -462,11 +461,10 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     }
 
-    svg.addEventListener('mousemove', function (e) { showBarTipByClientX(e.clientX) })
-    svg.addEventListener('mouseleave', function () { tipG.style.visibility = 'hidden'; resetBarOpacity() })
-    svg.addEventListener('touchstart', function (e) { e.preventDefault(); showBarTipByClientX(e.touches[0].clientX) }, { passive: false })
-    svg.addEventListener('touchmove', function (e) { e.preventDefault(); showBarTipByClientX(e.touches[0].clientX) }, { passive: false })
-    svg.addEventListener('touchend', function () { tipG.style.visibility = 'hidden'; resetBarOpacity() })
+    var barClicked = false
+    svg.addEventListener('mousemove', function (e) { if (!barClicked) showBarTipByClientX(e.clientX) })
+    svg.addEventListener('mouseleave', function () { if (!barClicked) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
+    svg.addEventListener('click', function (e) { barClicked = true; showBarTipByClientX(e.clientX) })
 
     UI.footer.hidden = true
 
