@@ -231,10 +231,10 @@
       return best
     }
 
-    var clicked = false
-    svg.addEventListener('mousemove', function (e) { if (!clicked) showTip(findNearestByClientX(e.clientX)) })
-    svg.addEventListener('mouseleave', function () { if (!clicked) tip.style.visibility = 'hidden' })
-    svg.addEventListener('click', function (e) { clicked = true; showTip(findNearestByClientX(e.clientX)) })
+    var tapped = false
+    svg.addEventListener('mousemove', function (e) { if (!tapped) showTip(findNearestByClientX(e.clientX)) })
+    svg.addEventListener('mouseleave', function () { if (!tapped) tip.style.visibility = 'hidden' })
+    svg.addEventListener('pointerdown', function (e) { tapped = true; showTip(findNearestByClientX(e.clientX)) })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -461,10 +461,10 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     }
 
-    var barClicked = false
-    svg.addEventListener('mousemove', function (e) { if (!barClicked) showBarTipByClientX(e.clientX) })
-    svg.addEventListener('mouseleave', function () { if (!barClicked) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
-    svg.addEventListener('click', function (e) { barClicked = true; showBarTipByClientX(e.clientX) })
+    var barTapped = false
+    svg.addEventListener('mousemove', function (e) { if (!barTapped) showBarTipByClientX(e.clientX) })
+    svg.addEventListener('mouseleave', function () { if (!barTapped) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
+    svg.addEventListener('pointerdown', function (e) { barTapped = true; showBarTipByClientX(e.clientX) })
 
     UI.footer.hidden = true
 
