@@ -197,13 +197,12 @@
     line.style.transition = 'stroke-dashoffset 0.8s ease-out'
     line.style.strokeDashoffset = '0'
 
-    // Tooltip (hover on desktop, tap-to-pin on mobile)
+    // Tooltip (mousemove on desktop, touch on mobile — matches host pattern)
     var svg = UI.main.querySelector('svg')
     var tip = document.getElementById('tip')
     var tipLine = document.getElementById('tip-line')
     var tipBg = document.getElementById('tip-bg')
     var tipText = document.getElementById('tip-text')
-    var pinned = null // pinned point index
 
     function showTip(best) {
       tip.style.visibility = 'visible'
@@ -221,30 +220,22 @@
       tipText.setAttribute('y', by + 12)
     }
 
-    function findNearest(e) {
+    function findNearestByClientX(clientX) {
       var rect = svg.getBoundingClientRect()
-      var rx = (e.clientX - rect.left) * (W / rect.width)
-      var best = pts[0], bestIdx = 0, bestD = Math.abs(pts[0].x - rx)
+      var rx = (clientX - rect.left) * (W / rect.width)
+      var best = pts[0], bestD = Math.abs(pts[0].x - rx)
       for (var i = 1; i < pts.length; i++) {
         var dd = Math.abs(pts[i].x - rx)
-        if (dd < bestD) { best = pts[i]; bestIdx = i; bestD = dd }
+        if (dd < bestD) { best = pts[i]; bestD = dd }
       }
-      return { pt: best, idx: bestIdx }
+      return best
     }
 
-    svg.addEventListener('pointermove', function (e) {
-      if (pinned !== null) return
-      showTip(findNearest(e).pt)
-    })
-    svg.addEventListener('pointerleave', function () {
-      if (pinned !== null) return
-      tip.style.visibility = 'hidden'
-    })
-    svg.addEventListener('pointerdown', function (e) {
-      var hit = findNearest(e)
-      if (pinned === hit.idx) { pinned = null; tip.style.visibility = 'hidden' }
-      else { pinned = hit.idx; showTip(hit.pt) }
-    })
+    svg.addEventListener('mousemove', function (e) { showTip(findNearestByClientX(e.clientX)) })
+    svg.addEventListener('mouseleave', function () { tip.style.visibility = 'hidden' })
+    svg.addEventListener('touchstart', function (e) { e.preventDefault(); showTip(findNearestByClientX(e.touches[0].clientX)) }, { passive: false })
+    svg.addEventListener('touchmove', function (e) { e.preventDefault(); showTip(findNearestByClientX(e.touches[0].clientX)) }, { passive: false })
+    svg.addEventListener('touchend', function () { tip.style.visibility = 'hidden' })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -428,27 +419,35 @@
         '</svg>' +
       '</div>'
 
-    // Bar tooltip (hover on desktop, tap-to-pin on mobile)
+    // Bar tooltip (mousemove on desktop, touch on mobile — matches host pattern)
     var svg = UI.main.querySelector('svg')
     var tipG = document.getElementById('bar-tip')
     var tipBg = document.getElementById('bar-tip-bg')
     var tipText = document.getElementById('bar-tip-text')
-    var pinnedBucket = null
 
-    function showBarTipForBucket(bucketIdx) {
-      // Show tooltip for the tallest bar in this bucket
-      var tallest = null, maxBytes = -1
-      for (var dj = 0; dj < dc; dj++) {
-        var item = (visibleDrives[dj].series || [])[bucketIdx]
-        if (item && item.bytes > maxBytes) { maxBytes = item.bytes; tallest = { drive: visibleDrives[dj], item: item, colorIdx: dj } }
+    function showBarTipByClientX(clientX) {
+      var rect = svg.getBoundingClientRect()
+      var rx = (clientX - rect.left) * (W / rect.width)
+      var idx = Math.round((rx - pad.left - groupW / 2) / groupW)
+      idx = Math.max(0, Math.min(bucketCount - 1, idx))
+
+      var rects = svg.querySelectorAll('.bar-rect')
+      for (var ri = 0; ri < rects.length; ri++) {
+        rects[ri].setAttribute('opacity', Math.floor(ri / dc) === idx ? '1' : '0.85')
       }
-      if (!tallest || maxBytes <= 0) { tipG.style.visibility = 'hidden'; return }
+
+      var tallest = null, mb = -1
+      for (var dj = 0; dj < dc; dj++) {
+        var item = (visibleDrives[dj].series || [])[idx]
+        if (item && item.bytes > mb) { mb = item.bytes; tallest = { drive: visibleDrives[dj], item: item } }
+      }
+      if (!tallest || mb <= 0) { tipG.style.visibility = 'hidden'; return }
       var labelStr = tallest.drive.name + ' · ' + formatLabel(tallest.item.date, range) + ' · ' + formatBytes(tallest.item.bytes)
       tipText.textContent = labelStr
       var tw = Math.max(60, labelStr.length * 5.6 + 14)
-      var cx = pad.left + bucketIdx * groupW + groupW / 2
+      var cx = pad.left + idx * groupW + groupW / 2
       var tx = Math.max(0, Math.min(W - tw, cx - tw / 2))
-      var bh = (maxBytes / maxVal) * ih
+      var bh = (mb / maxVal) * ih
       var ty = Math.max(0, pad.top + ih - bh - 22)
       tipBg.setAttribute('width', tw)
       tipBg.setAttribute('x', tx)
@@ -458,42 +457,16 @@
       tipG.style.visibility = 'visible'
     }
 
-    function findNearestBucket(e) {
-      var rect = svg.getBoundingClientRect()
-      var rx = (e.clientX - rect.left) * (W / rect.width)
-      var idx = Math.round((rx - pad.left - groupW / 2) / groupW)
-      return Math.max(0, Math.min(bucketCount - 1, idx))
-    }
-
-    function highlightBucket(idx) {
-      var rects = svg.querySelectorAll('.bar-rect')
-      for (var ri = 0; ri < rects.length; ri++) {
-        var bucketOfRect = Math.floor(ri / dc)
-        rects[ri].setAttribute('opacity', bucketOfRect === idx ? '1' : '0.85')
-      }
-    }
-
     function resetBarOpacity() {
       var rects = svg.querySelectorAll('.bar-rect')
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     }
 
-    svg.addEventListener('pointermove', function (e) {
-      if (pinnedBucket !== null) return
-      var idx = findNearestBucket(e)
-      highlightBucket(idx)
-      showBarTipForBucket(idx)
-    })
-    svg.addEventListener('pointerleave', function () {
-      if (pinnedBucket !== null) return
-      tipG.style.visibility = 'hidden'
-      resetBarOpacity()
-    })
-    svg.addEventListener('pointerdown', function (e) {
-      var idx = findNearestBucket(e)
-      if (pinnedBucket === idx) { pinnedBucket = null; tipG.style.visibility = 'hidden'; resetBarOpacity() }
-      else { pinnedBucket = idx; highlightBucket(idx); showBarTipForBucket(idx) }
-    })
+    svg.addEventListener('mousemove', function (e) { showBarTipByClientX(e.clientX) })
+    svg.addEventListener('mouseleave', function () { tipG.style.visibility = 'hidden'; resetBarOpacity() })
+    svg.addEventListener('touchstart', function (e) { e.preventDefault(); showBarTipByClientX(e.touches[0].clientX) }, { passive: false })
+    svg.addEventListener('touchmove', function (e) { e.preventDefault(); showBarTipByClientX(e.touches[0].clientX) }, { passive: false })
+    svg.addEventListener('touchend', function () { tipG.style.visibility = 'hidden'; resetBarOpacity() })
 
     UI.footer.hidden = true
 
@@ -575,6 +548,7 @@
     if (!isWidget) {
       UI.loader.hidden = true
       UI.content.hidden = false
+      document.querySelector('.card-head').hidden = true
       UI.main.innerHTML = '<div class="flex-center">该插件仅支持仪表盘小组件模式</div>'
       UI.footer.hidden = true
       DriveCat.resize()
