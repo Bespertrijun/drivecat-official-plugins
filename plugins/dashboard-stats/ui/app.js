@@ -237,6 +237,7 @@
     }
 
     var pinned = false
+    overlay.addEventListener('touchstart', function (e) { e.preventDefault() }, { passive: false })
     overlay.addEventListener('pointerdown', function (e) {
       pinned = true
       overlay.setPointerCapture(e.pointerId)
@@ -487,6 +488,7 @@
     UI.main.querySelector('.chart-container').appendChild(barOverlay)
 
     var barPinned = false
+    barOverlay.addEventListener('touchstart', function (e) { e.preventDefault() }, { passive: false })
     barOverlay.addEventListener('pointerdown', function (e) {
       barPinned = true
       barOverlay.setPointerCapture(e.pointerId)
