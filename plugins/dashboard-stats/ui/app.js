@@ -237,26 +237,18 @@
     }
 
     var pinned = false
-    overlay.addEventListener('touchstart', function (e) { e.preventDefault() }, { passive: false })
-    overlay.addEventListener('pointerdown', function (e) {
+    overlay.addEventListener('click', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
+    overlay.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
+    overlay.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
+    overlay.addEventListener('touchstart', function (e) {
+      if (e.cancelable) e.preventDefault()
       pinned = true
-      overlay.setPointerCapture(e.pointerId)
-      showTip(findNearestByClientX(e.clientX))
-    })
-    overlay.addEventListener('pointermove', function (e) {
-      if (!pinned || overlay.hasPointerCapture(e.pointerId)) {
-        showTip(findNearestByClientX(e.clientX))
-      }
-    })
-    overlay.addEventListener('pointerup', function (e) {
-      overlay.releasePointerCapture(e.pointerId)
-    })
-    overlay.addEventListener('pointerleave', function (e) {
-      if (!pinned) tip.style.visibility = 'hidden'
-    })
-    overlay.addEventListener('pointercancel', function (e) {
-      if (!pinned) tip.style.visibility = 'hidden'
-    })
+      if (e.touches.length) showTip(findNearestByClientX(e.touches[0].clientX))
+    }, { passive: false })
+    overlay.addEventListener('touchmove', function (e) {
+      if (e.cancelable) e.preventDefault()
+      if (e.touches.length) showTip(findNearestByClientX(e.touches[0].clientX))
+    }, { passive: false })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -488,26 +480,18 @@
     UI.main.querySelector('.chart-container').appendChild(barOverlay)
 
     var barPinned = false
-    barOverlay.addEventListener('touchstart', function (e) { e.preventDefault() }, { passive: false })
-    barOverlay.addEventListener('pointerdown', function (e) {
+    barOverlay.addEventListener('click', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
+    barOverlay.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
+    barOverlay.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
+    barOverlay.addEventListener('touchstart', function (e) {
+      if (e.cancelable) e.preventDefault()
       barPinned = true
-      barOverlay.setPointerCapture(e.pointerId)
-      showBarTipByClientX(e.clientX)
-    })
-    barOverlay.addEventListener('pointermove', function (e) {
-      if (!barPinned || barOverlay.hasPointerCapture(e.pointerId)) {
-        showBarTipByClientX(e.clientX)
-      }
-    })
-    barOverlay.addEventListener('pointerup', function (e) {
-      barOverlay.releasePointerCapture(e.pointerId)
-    })
-    barOverlay.addEventListener('pointerleave', function (e) {
-      if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() }
-    })
-    barOverlay.addEventListener('pointercancel', function (e) {
-      if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() }
-    })
+      if (e.touches.length) showBarTipByClientX(e.touches[0].clientX)
+    }, { passive: false })
+    barOverlay.addEventListener('touchmove', function (e) {
+      if (e.cancelable) e.preventDefault()
+      if (e.touches.length) showBarTipByClientX(e.touches[0].clientX)
+    }, { passive: false })
 
     UI.footer.hidden = true
 
