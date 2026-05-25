@@ -240,6 +240,18 @@
     overlay.addEventListener('click', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
     overlay.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
     overlay.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
+    overlay.addEventListener('touchstart', function (e) {
+      if (e.touches.length) {
+        pinned = true
+        showTip(findNearestByClientX(e.touches[0].clientX))
+      }
+    }, { passive: true })
+    overlay.addEventListener('touchmove', function (e) {
+      if (e.touches.length) {
+        if (e.cancelable) e.preventDefault()
+        showTip(findNearestByClientX(e.touches[0].clientX))
+      }
+    }, { passive: false })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -474,6 +486,18 @@
     barOverlay.addEventListener('click', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
     barOverlay.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
     barOverlay.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
+    barOverlay.addEventListener('touchstart', function (e) {
+      if (e.touches.length) {
+        barPinned = true
+        showBarTipByClientX(e.touches[0].clientX)
+      }
+    }, { passive: true })
+    barOverlay.addEventListener('touchmove', function (e) {
+      if (e.touches.length) {
+        if (e.cancelable) e.preventDefault()
+        showBarTipByClientX(e.touches[0].clientX)
+      }
+    }, { passive: false })
 
     UI.footer.hidden = true
 
