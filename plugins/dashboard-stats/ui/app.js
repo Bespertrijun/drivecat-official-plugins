@@ -231,10 +231,10 @@
       return best
     }
 
-    var tapped = false
-    svg.addEventListener('mousemove', function (e) { if (!tapped) showTip(findNearestByClientX(e.clientX)) })
-    svg.addEventListener('mouseleave', function () { if (!tapped) tip.style.visibility = 'hidden' })
-    svg.addEventListener('pointerdown', function (e) { tapped = true; showTip(findNearestByClientX(e.clientX)) })
+    var pinned = false
+    svg.addEventListener('mousedown', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
+    svg.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
+    svg.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -461,10 +461,10 @@
       for (var ri = 0; ri < rects.length; ri++) rects[ri].setAttribute('opacity', '0.85')
     }
 
-    var barTapped = false
-    svg.addEventListener('mousemove', function (e) { if (!barTapped) showBarTipByClientX(e.clientX) })
-    svg.addEventListener('mouseleave', function () { if (!barTapped) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
-    svg.addEventListener('pointerdown', function (e) { barTapped = true; showBarTipByClientX(e.clientX) })
+    var barPinned = false
+    svg.addEventListener('mousedown', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
+    svg.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
+    svg.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
 
     UI.footer.hidden = true
 
