@@ -206,7 +206,7 @@
 
     // HTML overlay for touch/click (Chrome Android ignores SVG events in iframes)
     var overlay = document.createElement('div')
-    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;'
+    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;background:rgba(0,0,0,0.01);'
     UI.main.querySelector('.chart-container').appendChild(overlay)
 
     function showTip(best) {
@@ -484,7 +484,7 @@
     }
 
     var barOverlay = document.createElement('div')
-    barOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;'
+    barOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;background:rgba(0,0,0,0.01);'
     UI.main.querySelector('.chart-container').appendChild(barOverlay)
 
     var barPinned = false
