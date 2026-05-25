@@ -206,7 +206,7 @@
 
     // HTML overlay for touch/click (Chrome Android ignores SVG events in iframes)
     var overlay = document.createElement('div')
-    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer'
+    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;'
     UI.main.querySelector('.chart-container').appendChild(overlay)
 
     function showTip(best) {
@@ -237,21 +237,25 @@
     }
 
     var pinned = false
-    overlay.addEventListener('click', function (e) { pinned = true; showTip(findNearestByClientX(e.clientX)) })
-    overlay.addEventListener('mousemove', function (e) { if (!pinned) showTip(findNearestByClientX(e.clientX)) })
-    overlay.addEventListener('mouseleave', function () { if (!pinned) tip.style.visibility = 'hidden' })
-    overlay.addEventListener('touchstart', function (e) {
-      if (e.touches.length) {
-        pinned = true
-        showTip(findNearestByClientX(e.touches[0].clientX))
+    overlay.addEventListener('pointerdown', function (e) {
+      pinned = true
+      overlay.setPointerCapture(e.pointerId)
+      showTip(findNearestByClientX(e.clientX))
+    })
+    overlay.addEventListener('pointermove', function (e) {
+      if (!pinned || overlay.hasPointerCapture(e.pointerId)) {
+        showTip(findNearestByClientX(e.clientX))
       }
-    }, { passive: true })
-    overlay.addEventListener('touchmove', function (e) {
-      if (e.touches.length) {
-        if (e.cancelable) e.preventDefault()
-        showTip(findNearestByClientX(e.touches[0].clientX))
-      }
-    }, { passive: false })
+    })
+    overlay.addEventListener('pointerup', function (e) {
+      overlay.releasePointerCapture(e.pointerId)
+    })
+    overlay.addEventListener('pointerleave', function (e) {
+      if (!pinned) tip.style.visibility = 'hidden'
+    })
+    overlay.addEventListener('pointercancel', function (e) {
+      if (!pinned) tip.style.visibility = 'hidden'
+    })
 
     // 底部三档数字
     UI.footer.innerHTML =
@@ -479,25 +483,29 @@
     }
 
     var barOverlay = document.createElement('div')
-    barOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer'
+    barOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;cursor:pointer;touch-action:none;'
     UI.main.querySelector('.chart-container').appendChild(barOverlay)
 
     var barPinned = false
-    barOverlay.addEventListener('click', function (e) { barPinned = true; showBarTipByClientX(e.clientX) })
-    barOverlay.addEventListener('mousemove', function (e) { if (!barPinned) showBarTipByClientX(e.clientX) })
-    barOverlay.addEventListener('mouseleave', function () { if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() } })
-    barOverlay.addEventListener('touchstart', function (e) {
-      if (e.touches.length) {
-        barPinned = true
-        showBarTipByClientX(e.touches[0].clientX)
+    barOverlay.addEventListener('pointerdown', function (e) {
+      barPinned = true
+      barOverlay.setPointerCapture(e.pointerId)
+      showBarTipByClientX(e.clientX)
+    })
+    barOverlay.addEventListener('pointermove', function (e) {
+      if (!barPinned || barOverlay.hasPointerCapture(e.pointerId)) {
+        showBarTipByClientX(e.clientX)
       }
-    }, { passive: true })
-    barOverlay.addEventListener('touchmove', function (e) {
-      if (e.touches.length) {
-        if (e.cancelable) e.preventDefault()
-        showBarTipByClientX(e.touches[0].clientX)
-      }
-    }, { passive: false })
+    })
+    barOverlay.addEventListener('pointerup', function (e) {
+      barOverlay.releasePointerCapture(e.pointerId)
+    })
+    barOverlay.addEventListener('pointerleave', function (e) {
+      if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() }
+    })
+    barOverlay.addEventListener('pointercancel', function (e) {
+      if (!barPinned) { tipG.style.visibility = 'hidden'; resetBarOpacity() }
+    })
 
     UI.footer.hidden = true
 
