@@ -17,6 +17,19 @@ plugins/
       index.html         ← 3 步向导骨架
       style.css          ← 样式（DriveCat 主题变量）
       app.js             ← 交互逻辑（选文件 / 配规则 / SSE 执行）
+  notify/                ← 示例：事件通知系统（Telegram，可扩展多渠道）
+    manifest.json        ← 监听 after_upload/after_sync/on_error/on_startup
+    main.py              ← 入口：注册钩子 + /notify 配置/测试路由
+    notify_notifier.py   ← 调度核心（事件网关 / 后台派发 / 测试发送）
+    notify_messages.py   ← 事件 → 渠道无关消息（容错字段提取）
+    notify_channel_base.py     ← 渠道抽象基类 NotifyChannel
+    notify_channel_telegram.py ← Telegram 渠道（urllib，零新依赖）
+    notify_channels.py   ← 渠道注册表 + 工厂（加渠道只需在此登记）
+    notify_config.py     ← 配置读写（FileProxy → config.json）
+    ui/
+      index.html         ← 设置页骨架（渠道配置 + 事件开关）
+      style.css          ← 样式（DriveCat 主题变量）
+      app.js             ← 交互逻辑（读写配置 / 测试发送）
 dist/                    ← 发布目录（自动生成，勿手动修改）
   index.json
   packages/
