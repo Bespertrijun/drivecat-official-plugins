@@ -441,26 +441,35 @@
     function showBarTipByClientX(clientX) {
       var rect = svg.getBoundingClientRect()
       var rx = (clientX - rect.left) * (W / rect.width)
+
+      // 命中的日期分组（桶）
       var idx = Math.round((rx - pad.left - groupW / 2) / groupW)
       idx = Math.max(0, Math.min(bucketCount - 1, idx))
 
+      // 组内命中的具体网盘柱子——按横坐标定位，而非取最高的那根，
+      // 这样 hover 短柱就显示短柱的数据，不再张冠李戴。
+      var localX = rx - (pad.left + idx * groupW + groupPad)
+      var dj = Math.floor(localX / barW)
+      dj = Math.max(0, Math.min(dc - 1, dj))
+
+      var item = (visibleDrives[dj].series || [])[idx]
+      if (!item) { tipG.style.visibility = 'hidden'; resetBarOpacity(); return }
+
+      // 只高亮命中的那一根柱子（渲染顺序为 桶*dc + 网盘）
       var rects = svg.querySelectorAll('.bar-rect')
+      var hitIndex = idx * dc + dj
       for (var ri = 0; ri < rects.length; ri++) {
-        rects[ri].setAttribute('opacity', Math.floor(ri / dc) === idx ? '1' : '0.85')
+        rects[ri].setAttribute('opacity', ri === hitIndex ? '1' : '0.85')
       }
 
-      var tallest = null, mb = -1
-      for (var dj = 0; dj < dc; dj++) {
-        var item = (visibleDrives[dj].series || [])[idx]
-        if (item && item.bytes > mb) { mb = item.bytes; tallest = { drive: visibleDrives[dj], item: item } }
-      }
-      if (!tallest || mb <= 0) { tipG.style.visibility = 'hidden'; return }
-      var labelStr = tallest.drive.name + ' · ' + formatLabel(tallest.item.date, range) + ' · ' + formatBytes(tallest.item.bytes)
+      var bytes = item.bytes || 0
+      var labelStr = visibleDrives[dj].name + ' · ' + formatLabel(item.date, range) + ' · ' + formatBytes(bytes)
       tipText.textContent = labelStr
       var tw = Math.max(60, labelStr.length * 5.6 + 14)
-      var cx = pad.left + idx * groupW + groupW / 2
-      var tx = Math.max(0, Math.min(W - tw, cx - tw / 2))
-      var bh = (mb / maxVal) * ih
+      // tooltip 居中于命中柱子的正上方
+      var barCx = pad.left + idx * groupW + groupPad + dj * barW + barW / 2
+      var tx = Math.max(0, Math.min(W - tw, barCx - tw / 2))
+      var bh = (bytes / maxVal) * ih
       var ty = Math.max(0, pad.top + ih - bh - 22)
       tipBg.setAttribute('width', tw)
       tipBg.setAttribute('x', tx)
