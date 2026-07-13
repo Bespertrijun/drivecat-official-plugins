@@ -33,10 +33,12 @@ if _plugin_dir not in sys.path:
     sys.path.insert(0, _plugin_dir)
 
 from app.plugin.base import HookContext, PluginContext, PluginInterface, PluginMeta
-from notify_channels import build_enabled_channels
-from notify_config import load_config_from_dir
-from notify_messages import format_event
-from notify_notifier import Notifier
+
+# 兄弟模块（notify_channels / notify_config / notify_messages / notify_notifier）一律
+# 延迟到「真正用到的位置」再导入，不在模块顶层导入。原因：这些文件由市场打包下发，
+# 万一某次打包/发布异常导致其中一个文件缺失或损坏，顶层导入会整体失败，令插件彻底
+# 加载不起来（路由 / UI / 测试按钮全灭，正如 v1.0.2 装到旧包时那样）。延迟导入后，
+# 坏文件只会让「用到它的那条路径」失效，其余功能照常。
 
 # 需注册的钩子（与 manifest.hooks 保持一致）
 HOOKS = ["after_upload", "after_sync", "on_error", "on_startup"]
@@ -72,6 +74,11 @@ def _dispatch_event(config_dir: Optional[str], hook_name: str, ctx: HookContext)
     try:
         if not config_dir:
             return
+        # 延迟导入（见文件顶部说明）：置于 try 内，兄弟模块缺失/损坏也只是安静跳过本次通知。
+        from notify_channels import build_enabled_channels
+        from notify_config import load_config_from_dir
+        from notify_messages import format_event
+
         config = load_config_from_dir(config_dir)
         if not (config.get("events") or {}).get(hook_name, False):
             return
@@ -123,7 +130,7 @@ class NotifyPlugin(PluginInterface):
 
     def __init__(self):
         self._context: Optional[PluginContext] = None
-        self._notifier: Optional[Notifier] = None
+        self._notifier = None  # 延迟构建的 Notifier（见 _get_notifier）
         self._config_dir: Optional[str] = None
         manifest_path = Path(__file__).parent / "manifest.json"
         with open(manifest_path, "r", encoding="utf-8") as f:
@@ -187,8 +194,14 @@ class NotifyPlugin(PluginInterface):
 
     # ── 惰性构建 ──
 
-    def _get_notifier(self) -> Notifier:
-        """首次使用时才解析 fs 并构建 Notifier（避免加载期触碰宿主资源）。"""
+    def _get_notifier(self) -> "Notifier":
+        """首次使用时才解析 fs 并构建 Notifier（避免加载期触碰宿主资源）。
+
+        Notifier 亦在此处延迟导入：它会连带导入 notify_config 等兄弟模块，放到这里可
+        避免顶层导入失败拖垮整个插件（见文件顶部说明）。
+        """
         if self._notifier is None:
+            from notify_notifier import Notifier
+
             self._notifier = Notifier(self._context.get_fs(), self._context.logger)
         return self._notifier
