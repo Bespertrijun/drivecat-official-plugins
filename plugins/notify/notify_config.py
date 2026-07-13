@@ -26,6 +26,7 @@
 
 import copy
 import json
+import os
 from typing import Any, Dict
 
 CONFIG_FILE = "config.json"
@@ -68,6 +69,25 @@ def load_config(fs) -> Dict[str, Any]:
                 _deep_merge(cfg, saved)
     except Exception:
         # 配置损坏不应让插件崩溃——退回默认值即可
+        pass
+    return cfg
+
+
+def load_config_from_dir(config_dir: str) -> Dict[str, Any]:
+    """不经 FileProxy，按绝对目录直接读取配置。
+
+    供沙箱子进程使用：子进程拿不到插件 context / FileProxy，只能按路径现读。
+    语义与 load_config 一致——缺失/损坏时回落到默认配置并补全缺省字段。
+    """
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    try:
+        path = os.path.join(config_dir, CONFIG_FILE)
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            if isinstance(saved, dict):
+                _deep_merge(cfg, saved)
+    except Exception:
         pass
     return cfg
 

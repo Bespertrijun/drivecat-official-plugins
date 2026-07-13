@@ -17,6 +17,8 @@ API 端点：
 配置存储：plugin_data/{plugin_id}/config.json（通过 FileProxy）
 """
 
+import asyncio
+import functools
 import json
 import sys
 from pathlib import Path
@@ -31,10 +33,55 @@ if _plugin_dir not in sys.path:
     sys.path.insert(0, _plugin_dir)
 
 from app.plugin.base import HookContext, PluginContext, PluginInterface, PluginMeta
+from notify_channels import build_enabled_channels
+from notify_config import load_config_from_dir
+from notify_messages import format_event
 from notify_notifier import Notifier
 
 # 需注册的钩子（与 manifest.hooks 保持一致）
 HOOKS = ["after_upload", "after_sync", "on_error", "on_startup"]
+
+
+# ── 沙箱子进程钩子入口 ──
+#
+# 宿主 PluginSandbox 用 ProcessPoolExecutor 在【独立子进程】里同步执行 handler
+# （loop.run_in_executor(pool, handler, ctx)）。因此钩子 handler 必须：
+#   ① 是同步函数——协程会被 run_in_executor 直接拒绝（“coroutines cannot be
+#      used with run_in_executor()”，正是之前上传成功却无通知的根因）；
+#   ② 可被 pickle——只能是模块级函数（配合 functools.partial 传参），
+#      实例方法 / 闭包都无法被 pickle 到子进程；
+#   ③ 自包含——子进程拿不到插件实例、FileProxy 与事件循环，故配置按绝对路径
+#      现读，发送时用 asyncio.run 自起临时事件循环。
+
+
+async def _send_all(channels, message) -> None:
+    """依次向所有渠道发送；单个渠道失败不影响其它渠道。"""
+    for channel in channels:
+        try:
+            await channel.send(message)
+        except Exception:
+            pass
+
+
+def _dispatch_event(config_dir: Optional[str], hook_name: str, ctx: HookContext) -> None:
+    """在沙箱子进程中处理一个钩子事件：判断开关 → 构建消息 → 同步发送。
+
+    任何异常都被吞掉：通知失败绝不能反馈给沙箱（连续 3 次失败会触发插件自动
+    禁用），更不能影响宿主的上传/同步主流程。
+    """
+    try:
+        if not config_dir:
+            return
+        config = load_config_from_dir(config_dir)
+        if not (config.get("events") or {}).get(hook_name, False):
+            return
+        channels = build_enabled_channels(config)
+        if not channels:
+            return
+        message = format_event(hook_name, ctx.data if ctx else {})
+        asyncio.run(_send_all(channels, message))
+    except Exception:
+        pass
 
 
 # ── API 请求模型 ──
@@ -77,6 +124,7 @@ class NotifyPlugin(PluginInterface):
     def __init__(self):
         self._context: Optional[PluginContext] = None
         self._notifier: Optional[Notifier] = None
+        self._config_dir: Optional[str] = None
         manifest_path = Path(__file__).parent / "manifest.json"
         with open(manifest_path, "r", encoding="utf-8") as f:
             self._meta = PluginMeta(**json.load(f))
@@ -86,15 +134,26 @@ class NotifyPlugin(PluginInterface):
 
     async def on_load(self, context: PluginContext) -> None:
         self._context = context
-        # 不在加载期触碰 get_fs()——插件资源此刻可能尚未就绪，若在此抛错会中断
-        # on_load，导致下面的 register_router 永不执行、所有 /notify/* 返回 404。
-        # 与 rename / dashboard-stats 一致：延迟到首次实际使用时再解析 fs。
+
+        # ── 解析配置目录 ──
+        # 钩子在沙箱【子进程】里执行，拿不到 FileProxy，只能按绝对路径现读 config.json，
+        # 故在此把目录解析出来、稍后 pickle 给子进程。整段包在 try 里：即便解析失败也
+        # 绝不能中断 on_load（否则下面的 register_router 被跳过 → 所有 /notify/* 变 404）；
+        # 最坏情况仅是钩子通知不可用，API 路由与测试按钮照常工作。
+        try:
+            self._config_dir = context.get_fs().root
+        except Exception as exc:
+            self._config_dir = None
+            context.logger.warning(
+                f"[NotifyPlugin] 配置目录解析失败，钩子通知暂不可用：{exc}"
+            )
 
         # ── 注册钩子 ──
+        # handler 必须是「同步 + 可 pickle + 自包含」的模块级函数，详见 _dispatch_event 注释。
         for hook_name in HOOKS:
             context.hooks.register(
                 hook_name,
-                self._make_handler(hook_name),
+                functools.partial(_dispatch_event, self._config_dir, hook_name),
                 plugin_id=context.plugin_id,
             )
 
@@ -133,14 +192,3 @@ class NotifyPlugin(PluginInterface):
         if self._notifier is None:
             self._notifier = Notifier(self._context.get_fs(), self._context.logger)
         return self._notifier
-
-    # ── 钩子处理 ──
-
-    def _make_handler(self, hook_name: str):
-        """为某个钩子生成 handler：把事件交给 Notifier 分发，永不修改数据。"""
-
-        async def handler(ctx: HookContext) -> Optional[HookContext]:
-            await self._get_notifier().dispatch(hook_name, ctx.data)
-            return None
-
-        return handler
