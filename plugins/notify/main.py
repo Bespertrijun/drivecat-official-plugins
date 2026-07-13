@@ -86,7 +86,9 @@ class NotifyPlugin(PluginInterface):
 
     async def on_load(self, context: PluginContext) -> None:
         self._context = context
-        self._notifier = Notifier(context.get_fs(), context.logger)
+        # 不在加载期触碰 get_fs()——插件资源此刻可能尚未就绪，若在此抛错会中断
+        # on_load，导致下面的 register_router 永不执行、所有 /notify/* 返回 404。
+        # 与 rename / dashboard-stats 一致：延迟到首次实际使用时再解析 fs。
 
         # ── 注册钩子 ──
         for hook_name in HOOKS:
@@ -101,16 +103,16 @@ class NotifyPlugin(PluginInterface):
 
         @router.get("/config")
         async def get_config():
-            return {"config": self._notifier.get_config()}
+            return {"config": self._get_notifier().get_config()}
 
         @router.post("/config")
         async def save_config(body: ConfigBody):
-            cfg = self._notifier.save_config(body.model_dump())
+            cfg = self._get_notifier().save_config(body.model_dump())
             return {"ok": True, "config": cfg}
 
         @router.post("/test")
         async def test(body: TestBody):
-            ok, error = await self._notifier.send_test(
+            ok, error = await self._get_notifier().send_test(
                 body.model_dump(exclude_none=True)
             )
             return {"ok": ok, "error": error}
@@ -124,13 +126,21 @@ class NotifyPlugin(PluginInterface):
         self._context = None
         self._notifier = None
 
+    # ── 惰性构建 ──
+
+    def _get_notifier(self) -> Notifier:
+        """首次使用时才解析 fs 并构建 Notifier（避免加载期触碰宿主资源）。"""
+        if self._notifier is None:
+            self._notifier = Notifier(self._context.get_fs(), self._context.logger)
+        return self._notifier
+
     # ── 钩子处理 ──
 
     def _make_handler(self, hook_name: str):
         """为某个钩子生成 handler：把事件交给 Notifier 分发，永不修改数据。"""
 
         async def handler(ctx: HookContext) -> Optional[HookContext]:
-            await self._notifier.dispatch(hook_name, ctx.data)
+            await self._get_notifier().dispatch(hook_name, ctx.data)
             return None
 
         return handler

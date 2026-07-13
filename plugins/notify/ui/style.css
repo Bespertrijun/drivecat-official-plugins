@@ -4,7 +4,6 @@
   --dc-primary-hover: #2563eb;
   --dc-bg-card: #ffffff;
   --dc-bg-elevated: #f8fafc;
-  --dc-bg-surface: #fdfdfd;
   --dc-text-primary: #1e293b;
   --dc-text-secondary: #475569;
   --dc-text-tertiary: #94a3b8;
@@ -18,7 +17,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--dc-bg-surface);
+  /* 透明背景——由宿主面板提供主题化底色，随主仓亮/暗色系走 */
+  background: transparent;
   color: var(--dc-text-primary);
   padding: 20px 24px;
   font-size: 14px;
@@ -119,6 +119,7 @@ input:focus, select:focus { border-color: var(--dc-primary); }
   padding: 8px 20px;
   border: none; border-radius: 6px;
   cursor: pointer; font-size: 13px; font-weight: 600;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 .btn-primary { background: var(--dc-primary); color: #fff; }
@@ -140,4 +141,26 @@ input:focus, select:focus { border-color: var(--dc-primary); }
 .footer-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: 14px;
   margin-top: 8px;
+  flex-wrap: wrap;
+}
+/* 状态文字可收缩/换行，保存按钮永不被挤出或截断 */
+.footer-actions .status { flex: 1 1 auto; min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.footer-actions .btn-primary { flex-shrink: 0; }
+
+/* ── 小屏：底部操作纵向堆叠，保存按钮整宽、易点击 ── */
+@media (max-width: 480px) {
+  body { padding: 16px; }
+  .row-actions { flex-wrap: wrap; }
+  .footer-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .footer-actions .status { text-align: center; }
+  .footer-actions .btn-primary {
+    width: 100%;
+    padding: 12px;
+    min-height: 44px;
+    font-size: 14px;
+  }
 }
