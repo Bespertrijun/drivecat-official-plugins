@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>通知系统</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div class="page-header">
+      <h1>🔔 通知系统</h1>
+      <p class="hint">在上传/同步完成、发生错误、服务启动时，把通知推送到外部渠道。</p>
+    </div>
+
+    <!-- ====== Telegram 渠道 ====== -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="ch-icon">✈️</span>
+          <span>Telegram</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="tg-enabled">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="card-body" id="tg-body">
+        <div class="control-group">
+          <label for="tg-token">Bot Token</label>
+          <input type="text" id="tg-token" placeholder="123456:ABC-DEF..." autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="control-group">
+          <label for="tg-chat">Chat ID</label>
+          <input type="text" id="tg-chat" placeholder="例如 123456789 或群组的 -100..." autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="control-group">
+          <label for="tg-parse">消息格式</label>
+          <select id="tg-parse">
+            <option value="HTML">HTML（加粗标题，推荐）</option>
+            <option value="">纯文本</option>
+          </select>
+        </div>
+
+        <details class="help">
+          <summary>如何获取 Bot Token 和 Chat ID？</summary>
+          <ol>
+            <li>在 Telegram 里搜索 <b>@BotFather</b>，发送 <code>/newbot</code> 创建机器人，得到 <b>Bot Token</b>。</li>
+            <li>给你的机器人随便发一条消息。</li>
+            <li>浏览器打开 <code>https://api.telegram.org/bot&lt;Token&gt;/getUpdates</code>，
+              读取 <code>result[].message.chat.id</code> 即为 <b>Chat ID</b>（群组为负数）。</li>
+          </ol>
+        </details>
+
+        <div class="row-actions">
+          <button class="btn btn-secondary" id="btn-test" onclick="App.test()">发送测试</button>
+          <span class="status" id="tg-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== 通知事件 ====== -->
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title"><span class="ch-icon">📣</span><span>通知事件</span></div>
+      </div>
+      <div class="card-body">
+        <p class="hint" style="margin-bottom:12px">选择哪些事件触发通知：</p>
+        <label class="check-row">
+          <input type="checkbox" id="ev-after_upload">
+          <span><b>上传完成/失败</b><em>后台监控上传结束时</em></span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="ev-after_sync">
+          <span><b>同步完成/异常</b><em>定时或手动同步结束时</em></span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="ev-on_error">
+          <span><b>发生错误</b><em>系统捕获到错误时</em></span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="ev-on_startup">
+          <span><b>服务启动</b><em>DriveCat 启动完成时</em></span>
+        </label>
+      </div>
+    </section>
+
+    <div class="footer-actions">
+      <span class="status" id="save-status"></span>
+      <button class="btn btn-primary" id="btn-save" onclick="App.save()">保存设置</button>
+    </div>
+  </div>
+
+  <script src="../_shared/sdk.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

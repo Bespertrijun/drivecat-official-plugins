@@ -1,0 +1,25 @@
+{
+  "name": "通知系统",
+  "author": "DriveCat",
+  "description": "在上传/同步完成、发生错误、服务启动等事件时，把通知推送到外部渠道。当前内置 Telegram，架构可扩展 Discord / Slack 等更多渠道。",
+  "hooks": [
+    "after_upload",
+    "after_sync",
+    "on_error",
+    "on_startup"
+  ],
+  "permissions": [
+    "drive.upload",
+    "drive.sync",
+    "fs.read",
+    "fs.write"
+  ],
+  "source": "official",
+  "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
+  "entry": "main.NotifyPlugin",
+  "ui": {
+    "mode": "iframe",
+    "entry": "ui/index.html",
+    "hooks": []
+  }
+}
