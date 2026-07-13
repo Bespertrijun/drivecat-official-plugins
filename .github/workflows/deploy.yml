@@ -5,9 +5,19 @@ on:
     tags: ['*/v*']
   workflow_dispatch:
 
+# 同一时刻只允许一个部署，但【绝不取消进行中的部署】。
+#
+# 一次 `git push` 推多个插件 tag 会各触发一个 workflow run。旧配置用
+# cancel-in-progress: true，后来的 run 会取消正在跑的 run——若恰好打断了 Pages
+# 部署中途，站点会停在半更新/旧内容上，这正是 v1.0.2 下发旧包的根源。
+#
+# 改为 false 后：进行中的部署跑完不被打断，其余 run 排队，GitHub 只保留最后一个
+# 排队的 run。由于 build.py 每次都从【所有 tag】全量重建并签名，最后完成的那次 run
+# 必然产出完整且最新的产物 —— 与哪个 tag 触发的无关。
+# （对齐 GitHub 官方 Pages 部署模板的推荐做法。）
 concurrency:
   group: pages-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -25,6 +35,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 拉全量历史 + tags，build.py 需要按 tag 重建历史版本
+
+      # 兜底：显式再抓一次全部 tag（含被移动的 tag，--force）。
+      # 多个 tag 几乎同时推送时，触发本 run 的 checkout ref 可能尚未包含另一个刚推的
+      # tag；这里强制补齐，确保 build.py 能看到并打包所有版本、且用的是每个 tag 的最新指向。
+      - name: Fetch all tags
+        run: git fetch --tags --force --prune
 
       - uses: actions/setup-python@v5
         with:
