@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from notify_channels import build_channel, build_enabled_channels
 from notify_config import load_config, save_config
-from notify_messages import format_event, make_test_message
+from notify_messages import event_toggles, format_event, make_test_message
 
 
 class Notifier:
@@ -41,7 +41,9 @@ class Notifier:
 
     async def dispatch(self, hook_name: str, data: Optional[Dict[str, Any]]) -> None:
         try:
-            if not (self._config.get("events") or {}).get(hook_name, False):
+            toggles = event_toggles(hook_name, data)
+            events = self._config.get("events") or {}
+            if not toggles or not all(events.get(key, False) for key in toggles):
                 return
             channels = build_enabled_channels(self._config)
             if not channels:

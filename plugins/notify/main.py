@@ -3,11 +3,13 @@
 
 监听宿主事件并把通知推送到外部渠道（当前内置 Telegram）。
 
-监听的钩子：
-  after_upload  — 上传完成/失败
-  after_sync    — 同步完成/异常
-  on_error      — 发生错误
-  on_startup    — 服务启动
+监听的钩子（宿主约定：after_* 只代表成功，失败一律走 on_error）：
+  after_upload           — 上传完成
+  after_transfer         — 转存完成（单文件、文件夹内、同步内的单个文件）
+  after_folder_transfer  — 文件夹转存整批完成
+  after_sync             — 同步一轮完成
+  on_error               — 所有失败 / 错误（上传、转存、文件夹、同步、网盘凭证失效；按 source 区分）
+  on_startup             — 服务启动
 
 API 端点：
   GET  /notify/config   — 读取当前配置
@@ -40,8 +42,30 @@ from app.plugin.base import HookContext, PluginContext, PluginInterface, PluginM
 # 加载不起来（路由 / UI / 测试按钮全灭，正如 v1.0.2 装到旧包时那样）。延迟导入后，
 # 坏文件只会让「用到它的那条路径」失效，其余功能照常。
 
+
+def _forget_stale_siblings() -> None:
+    """丢掉 sys.modules 里本插件目录下的旧兄弟模块（本模块自身除外）。
+
+    市场热更新会从磁盘重新执行本文件，但兄弟模块按裸名缓存在 sys.modules 里，不清掉的话
+    延迟导入拿到的仍是旧代码（例如旧的默认配置里没有新增的事件开关）。任何异常都忽略。
+    """
+    try:
+        here = Path(__file__).resolve().parent
+        for name, module in list(sys.modules.items()):
+            try:
+                file = getattr(module, "__file__", None)
+                if name != __name__ and file and Path(file).resolve().parent == here:
+                    sys.modules.pop(name, None)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+_forget_stale_siblings()
+
 # 需注册的钩子（与 manifest.hooks 保持一致）
-HOOKS = ["after_upload", "after_sync", "on_error", "on_startup"]
+HOOKS = ["after_upload", "after_transfer", "after_folder_transfer", "after_sync", "on_error", "on_startup"]
 
 
 # ── 沙箱子进程钩子入口 ──
@@ -77,15 +101,18 @@ def _dispatch_event(config_dir: Optional[str], hook_name: str, ctx: HookContext)
         # 延迟导入（见文件顶部说明）：置于 try 内，兄弟模块缺失/损坏也只是安静跳过本次通知。
         from notify_channels import build_enabled_channels
         from notify_config import load_config_from_dir
-        from notify_messages import format_event
+        from notify_messages import event_toggles, format_event
 
+        data = ctx.data if ctx else {}
         config = load_config_from_dir(config_dir)
-        if not (config.get("events") or {}).get(hook_name, False):
+        toggles = event_toggles(hook_name, data)
+        events = config.get("events") or {}
+        if not toggles or not all(events.get(key, False) for key in toggles):
             return
         channels = build_enabled_channels(config)
         if not channels:
             return
-        message = format_event(hook_name, ctx.data if ctx else {})
+        message = format_event(hook_name, data)
         asyncio.run(_send_all(channels, message))
     except Exception:
         pass
@@ -110,6 +137,9 @@ class EventsConfig(BaseModel):
     after_sync: bool = True
     on_error: bool = True
     on_startup: bool = False
+    transfer: bool = True
+    transfer_batch_files: bool = False
+    sync_files: bool = False
 
 
 class ConfigBody(BaseModel):

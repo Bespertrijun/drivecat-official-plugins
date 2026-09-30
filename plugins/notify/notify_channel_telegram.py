@@ -12,6 +12,7 @@
 
 import asyncio
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
@@ -21,6 +22,18 @@ from notify_messages import Message
 
 _API = "https://api.telegram.org/bot{token}/sendMessage"
 _TIMEOUT = 15
+# 触发限流（429）时按 retry_after 等待后重试一次，但"已用时间 + 等待"不超过这么多秒，否则放弃这条：
+# 钩子在宿主沙箱里执行，连同排队超过 30 秒会被判超时（连续超时会被自动禁用）；重试本身还可能
+# 再花 _TIMEOUT 秒，8 + 15 仍留有余量
+_RETRY_BUDGET = 8
+
+
+class _RateLimited(RuntimeError):
+    """Telegram 返回 429，retry_after 为要求等待的秒数（取不到时为 None）。"""
+
+    def __init__(self, message: str, retry_after: Optional[float]):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 def _esc(text: Any) -> str:
@@ -67,7 +80,17 @@ class TelegramChannel(NotifyChannel):
     # ── 发送 ──
 
     async def send(self, message: Message) -> None:
-        await self._post(self.render(message))
+        text = self.render(message)
+        started = time.monotonic()
+        try:
+            await self._post(text)
+        except _RateLimited as exc:
+            # 短时间内消息太多（每个会话约 1 条/秒、群组约 20 条/分）：按要求等待后重试一次
+            elapsed = time.monotonic() - started
+            if exc.retry_after is None or elapsed + exc.retry_after > _RETRY_BUDGET:
+                raise
+            await asyncio.sleep(max(exc.retry_after, 0))
+            await self._post(text)
 
     async def _post(self, text: str) -> None:
         url = _API.format(token=self._token)
@@ -92,10 +115,19 @@ class TelegramChannel(NotifyChannel):
                     resp.read()
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", "replace")
+                retry_after = None
                 try:
-                    detail = json.loads(detail).get("description", detail)
+                    body_json = json.loads(detail)
+                    detail = body_json.get("description", detail)
+                    retry_after = (body_json.get("parameters") or {}).get("retry_after")
                 except Exception:
                     pass
+                if exc.code == 429:
+                    try:
+                        retry_after = float(retry_after) if retry_after is not None else None
+                    except (TypeError, ValueError):
+                        retry_after = None
+                    raise _RateLimited(f"Telegram 返回 429：{detail}", retry_after)
                 raise RuntimeError(f"Telegram 返回 {exc.code}：{detail}")
             except urllib.error.URLError as exc:
                 raise RuntimeError(f"网络错误：{exc.reason}")

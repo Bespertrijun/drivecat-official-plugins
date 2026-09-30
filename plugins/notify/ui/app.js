@@ -9,7 +9,18 @@
 ;(function () {
   'use strict'
 
-  var EVENTS = ['after_upload', 'after_sync', 'on_error', 'on_startup']
+  // 事件开关及默认值（与 notify_config.DEFAULT_CONFIG 一致）。配置里缺少某个键（旧配置 /
+  // 新增的开关）时按默认值回填，避免显示成关闭、一保存就把 false 写进配置。
+  var EVENT_DEFAULTS = {
+    after_upload: true,
+    transfer: true,
+    transfer_batch_files: false,
+    after_sync: true,
+    sync_files: false,
+    on_error: true,
+    on_startup: false,
+  }
+  var EVENTS = Object.keys(EVENT_DEFAULTS)
 
   function $(id) { return document.getElementById(id) }
 
@@ -40,13 +51,17 @@
     $('tg-parse').value = tg.parse_mode != null ? tg.parse_mode : 'HTML'
 
     var ev = cfg.events || {}
-    EVENTS.forEach(function (k) { $('ev-' + k).checked = !!ev[k] })
+    EVENTS.forEach(function (k) {
+      $('ev-' + k).checked = ev[k] == null ? EVENT_DEFAULTS[k] : !!ev[k]
+    })
     syncEnabledState()
   }
 
-  // 根据开关淡化/激活 Telegram 正文
+  // 根据开关淡化/激活 Telegram 正文；"逐个文件"子开关只在父开关开启时可选
   function syncEnabledState() {
     $('tg-body').classList.toggle('disabled', !$('tg-enabled').checked)
+    $('ev-transfer_batch_files').disabled = !$('ev-transfer').checked
+    $('ev-sync_files').disabled = !$('ev-after_sync').checked
   }
 
   function setStatus(id, text, kind) {
@@ -112,6 +127,8 @@
 
   DriveCat.onInit(function () {
     $('tg-enabled').addEventListener('change', syncEnabledState)
+    $('ev-transfer').addEventListener('change', syncEnabledState)
+    $('ev-after_sync').addEventListener('change', syncEnabledState)
     App.load()
   })
 })()

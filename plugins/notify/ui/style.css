@@ -96,6 +96,9 @@ input:focus, select:focus { border-color: var(--dc-primary); }
 .check-row span { display: flex; flex-direction: column; gap: 2px; }
 .check-row b { font-weight: 600; font-size: 13px; }
 .check-row em { font-style: normal; font-size: 12px; color: var(--dc-text-tertiary); }
+/* 子开关：缩进挂在上一项下面，父项关闭时置灰 */
+.check-sub { padding-left: 26px; }
+.check-row:has(input:disabled) { opacity: .5; cursor: not-allowed; }
 
 /* ── 帮助折叠区 ── */
 .help {

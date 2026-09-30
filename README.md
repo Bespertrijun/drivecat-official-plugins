@@ -18,7 +18,7 @@ plugins/
       style.css          ← 样式（DriveCat 主题变量）
       app.js             ← 交互逻辑（选文件 / 配规则 / SSE 执行）
   notify/                ← 示例：事件通知系统（Telegram，可扩展多渠道）
-    manifest.json        ← 监听 after_upload/after_sync/on_error/on_startup
+    manifest.json        ← 监听 after_upload/after_transfer/after_folder_transfer/after_sync/on_error/on_startup
     main.py              ← 入口：注册钩子 + /notify 配置/测试路由
     notify_notifier.py   ← 调度核心（事件网关 / 后台派发 / 测试发送）
     notify_messages.py   ← 事件 → 渠道无关消息（容错字段提取）
@@ -626,12 +626,17 @@ async def handler(ctx: HookContext) -> Optional[HookContext]:
 
 | 钩子 | 触发时机 | 所需权限 |
 |------|---------|---------|
-| `before_upload` / `after_upload` | 上传前后 | `drive.upload` |
+| `before_upload` / `after_upload` | 上传前 / 上传成功后 | `drive.upload` |
+| `after_transfer` | 单个文件转存成功后（含文件夹内、同步内的文件） | `drive.upload` |
+| `after_folder_transfer` | 文件夹转存整批全部成功后 | `drive.upload` |
 | `before_rename` / `after_rename` | 重命名前后 | `drive.rename` |
-| `before_sync` / `after_sync` | 同步前后 | `drive.sync` |
+| `before_sync` | 同步前 | `drive.sync` |
+| `after_sync` | 一轮同步的文件全部成功后（没有新文件的轮次不触发） | `drive.sync` |
 | `on_file_detected` | 检测到文件 | `file.read` |
-| `on_startup` / `on_shutdown` | 系统启停 | 无 |
-| `on_error` | 错误发生 | 无 |
+| `on_startup` / `on_shutdown` | 系统启停（`on_startup` 的 data 带 `version`） | 无 |
+| `on_error` | 失败 / 错误发生，`data["source"]` 区分来源（见下） | 无 |
+
+> `after_*` 只代表成功，失败一律走 `on_error`，`data["source"]` 取值：`upload`（上传失败）、`transfer`（单个转存失败）、`folder_transfer`（文件夹转存有文件失败）、`sync_run`（同步一轮有文件失败，或中途出错时 `aborted=True`）、`sync`（同步扫描失败 / 中途出错）、`drive_auth`（网盘凭证失效）；`data["message"]` 为错误说明。`after_transfer` / `after_folder_transfer` / `after_sync` / `on_error` 在后台逐条分发，不阻塞业务流程。
 
 #### context.list_drives() — 枚举网盘配置
 

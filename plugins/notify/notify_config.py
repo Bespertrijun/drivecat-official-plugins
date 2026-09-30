@@ -14,10 +14,13 @@
         }
       },
       "events": {
-        "after_upload": true,
-        "after_sync":   true,
-        "on_error":     true,
-        "on_startup":   false
+        "after_upload": true,     // 上传完成（after_upload）
+        "transfer":     true,     // 转存完成（after_transfer / after_folder_transfer）
+        "transfer_batch_files": false, // 文件夹内逐个文件也推（默认关：只推整批汇总）
+        "after_sync":   true,     // 同步完成（after_sync 每轮汇总）
+        "sync_files":   false,    // 同步内逐个文件也推（默认关：只推每轮汇总）
+        "on_error":     true,     // 所有失败 / 错误（on_error）
+        "on_startup":   false     // 服务启动（on_startup）
       }
     }
 
@@ -43,8 +46,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "events": {
         "after_upload": True,
         "after_sync": True,
+        "sync_files": False,
         "on_error": True,
         "on_startup": False,
+        "transfer": True,
+        "transfer_batch_files": False,
     },
 }
 
