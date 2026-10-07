@@ -132,6 +132,8 @@ def create_app(plugin_dir: Path) -> FastAPI:
     models_quota_mod.QuotaUsage = stubs.QuotaUsage
     models_watch_mod = types.ModuleType("app.models.watch")
     models_watch_mod.UploadTask = stubs.UploadTask
+    models_watch_mod.WatchRule = stubs.WatchRule
+    models_watch_mod.UploadTarget = stubs.UploadTarget
     sys.modules["app.models"] = models_mod
     sys.modules["app.models.quota"] = models_quota_mod
     sys.modules["app.models.watch"] = models_watch_mod
@@ -151,6 +153,18 @@ def create_app(plugin_dir: Path) -> FastAPI:
     # ── DevRT 内置示例：4 个网盘 + 30 天 quota_usage ──
     mock_drives_list = _build_mock_drive_list()
     mock_db_store = _seed_quota_usage(stubs.QuotaUsage, mock_drives_list)
+    if plugin_dir.name == "qb-cleanup":
+        mock_db_store.update({
+            stubs.WatchRule: [stubs.WatchRule(id=1, name="示例影视目录", local_path="/downloads",
+                                              is_enabled=True, post_action="delete"),
+                              stubs.WatchRule(id=2, name="保留文件示例", local_path="/keep",
+                                              is_enabled=True, post_action="keep")],
+            stubs.UploadTarget: [stubs.UploadTarget(id=1, watch_rule_id=1, is_enabled=True)],
+            stubs.UploadTask: [stubs.UploadTask(id=1, watch_rule_id=1, upload_target_id=1,
+                                               local_path="/downloads/demo.mkv", status="pending",
+                                               file_size=100, file_mtime=1700000000,
+                                               created_at=1700000100, origin_type="watcher")],
+        })
 
     # ── 创建 PluginContext ──
     from loguru import logger

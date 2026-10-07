@@ -17,6 +17,7 @@ plugins/
       index.html         ← 3 步向导骨架
       style.css          ← 样式（DriveCat 主题变量）
       app.js             ← 交互逻辑（选文件 / 配规则 / SSE 执行）
+  qb-cleanup/            ← Watcher 关联任务成功并通过安静期后清理 qB 种子，支持持久化重试
   notify/                ← 示例：事件通知系统（Telegram，可扩展多渠道）
     manifest.json        ← 监听 after_upload/after_transfer/after_folder_transfer/after_sync/on_error/on_startup
     main.py              ← 入口：注册钩子 + /notify 配置/测试路由

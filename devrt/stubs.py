@@ -319,6 +319,20 @@ class UploadTask(_ModelBase):
     completed_at      = _Column("completed_at")
 
 
+class WatchRule(_ModelBase):
+    id = _Column("id")
+    name = _Column("name")
+    local_path = _Column("local_path")
+    is_enabled = _Column("is_enabled")
+    post_action = _Column("post_action")
+
+
+class UploadTarget(_ModelBase):
+    id = _Column("id")
+    watch_rule_id = _Column("watch_rule_id")
+    is_enabled = _Column("is_enabled")
+
+
 class _Query:
     """极简链式查询。仅支持 filter / order_by / all / first / count。"""
 
@@ -326,6 +340,7 @@ class _Query:
         self._rows = list(rows)
         self._preds: List[_Predicate] = []
         self._order: Optional[str] = None
+        self._limit = None
 
     def filter(self, *preds: _Predicate) -> "_Query":
         for p in preds:
@@ -342,11 +357,15 @@ class _Query:
         self._order = expr.name
         return self
 
+    def limit(self, count: int) -> "_Query":
+        self._limit = count
+        return self
+
     def _materialize(self) -> List[Any]:
         out = [r for r in self._rows if all(p(r) for p in self._preds)]
         if self._order:
             out.sort(key=lambda r: getattr(r, self._order))
-        return out
+        return out[:self._limit] if self._limit is not None else out
 
     def all(self) -> List[Any]:
         return self._materialize()
@@ -360,7 +379,7 @@ class _Query:
 
 
 # 表级白名单 — 与生产 DbProxy 行为对齐
-_ALLOWED_MODELS = {QuotaUsage, UploadTask}
+_ALLOWED_MODELS = {QuotaUsage, UploadTask, WatchRule, UploadTarget}
 
 
 class MockDb:

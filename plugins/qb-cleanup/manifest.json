@@ -1,0 +1,19 @@
+{
+  "name": "qBittorrent 后处理清理",
+  "author": "DriveCat",
+  "description": "所选 watcher 关联上传任务全部成功、qB 下载完成并通过安静期后移除种子任务，保留下载数据。支持 Docker 路径映射和持久化重试。",
+  "hooks": [],
+  "permissions": [
+    "db.read",
+    "fs.read",
+    "fs.write"
+  ],
+  "source": "official",
+  "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
+  "entry": "main.QbCleanupPlugin",
+  "ui": {
+    "mode": "iframe",
+    "entry": "ui/index.html",
+    "hooks": []
+  }
+}
