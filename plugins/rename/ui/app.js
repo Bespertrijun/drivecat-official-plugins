@@ -682,12 +682,19 @@
   function getRuleSpecs() {
     return state.rules.map(function (r) {
       var params = {}
-      for (var k in r.params) params[k] = r.params[k]
-      // 数字转换
-      for (var k2 in params) {
-        if (typeof params[k2] === 'string' && /^-?\d+$/.test(params[k2])) {
-          params[k2] = parseInt(params[k2], 10)
+      // 只转换声明为 number 的字段（序号/补零/位置等）。
+      // 纯数字文本（如 tmdbid 替换值）若被转成 int，后端 re.sub 会 TypeError → 500。
+      var numericKeys = {}
+      var fields = (RULE_CONFIG[r.type] || {}).fields || []
+      fields.forEach(function (f) { if (f.type === 'number') numericKeys[f.key] = true })
+      for (var k in r.params) {
+        var v = r.params[k]
+        if (numericKeys[k]) {
+          if (typeof v === 'string' && /^-?\d+$/.test(v)) v = parseInt(v, 10)
+        } else if (typeof v === 'number') {
+          v = String(v)  // 兼容旧模板里已被存成数字的文本字段
         }
+        params[k] = v
       }
       return { type: r.type, params: params }
     }).filter(function (r) {
