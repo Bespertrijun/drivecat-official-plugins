@@ -84,7 +84,8 @@ input[type="text"], input[type="number"], select {
   padding: 8px 12px;
   border: 1px solid var(--dc-border);
   border-radius: 6px;
-  background: var(--dc-bg-card);
+  /* 宿主（v2 主题）提供 --dc-bg-input；旧宿主没有时退回卡片色 */
+  background: var(--dc-bg-input, var(--dc-bg-card));
   color: var(--dc-text-primary);
   font-size: 13px;
   outline: none;
@@ -92,6 +93,20 @@ input[type="text"], input[type="number"], select {
 }
 input:focus, select:focus { border-color: var(--dc-primary); }
 select { width: 100%; }
+
+/* 浅色主题：白底 + 略深的边框（灰底显脏）；深色保持 --dc-bg-input 的下沉感 */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select {
+  background: var(--dc-bg-card);
+  border-color: var(--dc-border-hover, rgba(0, 0, 0, 0.14));
+}
+
+/* 浅色主题：次级按钮改白底，--dc-bg-elevated 的灰在浅色下偏深 */
+[data-theme="light"] .btn-secondary {
+  background: var(--dc-bg-card);
+  border-color: var(--dc-border-hover, rgba(0, 0, 0, 0.14));
+}
 
 /* ── 按钮 ── */
 .btn {
@@ -147,7 +162,10 @@ select { width: 100%; }
 }
 .file-item:last-child { border-bottom: none; }
 .file-item:hover { background: var(--dc-bg-elevated); }
-.file-item.selected { background: rgba(59,130,246,0.08); }
+.file-item.selected {
+  background: rgba(99,102,241,0.10);
+  background: color-mix(in srgb, var(--dc-primary) 10%, transparent);
+}
 .file-icon { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-size { font-size: 11px; color: var(--dc-text-tertiary); flex-shrink: 0; }
@@ -156,16 +174,16 @@ select { width: 100%; }
 .selection-info {
   display: flex; align-items: center; gap: 8px;
   margin-top: 12px; padding: 8px 12px;
-  background: rgba(59,130,246,0.06); border-radius: 6px;
+  background: rgba(99,102,241,0.08);
+  background: color-mix(in srgb, var(--dc-primary) 8%, transparent);
+  border-radius: 6px;
   font-size: 12px; color: var(--dc-primary);
 }
 
-/* ── 模板区 ── */
+/* ── 模板区（无外框，裸控件排列） ── */
 .template-bar {
   display: flex; align-items: center; gap: 8px;
-  margin-bottom: 16px; padding: 10px 14px;
-  background: var(--dc-bg-elevated); border-radius: 8px;
-  border: 1px solid var(--dc-border);
+  margin-bottom: 16px;
 }
 .template-bar select { flex: 1; }
 
@@ -179,8 +197,39 @@ select { width: 100%; }
 .rule-card-header {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
+  /* 点击卡片头折叠/展开 */
+  cursor: pointer; user-select: none;
 }
-.rule-card-title { font-weight: 600; font-size: 13px; color: var(--dc-primary); }
+.collapse-icon {
+  margin-left: auto;
+  color: var(--dc-text-tertiary); font-size: 12px;
+  transition: transform 0.15s;
+}
+.rule-card.collapsed .collapse-icon { transform: rotate(-90deg); }
+/* 折叠摘要：与标题同处一行，便于区分多条同类型规则 */
+.rule-summary {
+  display: none;
+  flex: 1; min-width: 0;
+  margin-left: 10px;
+  font-size: 12px; color: var(--dc-text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 折叠态收成单行列表项 */
+.rule-card.collapsed { padding: 8px 12px; margin-bottom: 6px; }
+.rule-card.collapsed .rule-card-header { margin-bottom: 0; }
+.rule-card.collapsed .rule-field { display: none; }
+.rule-card.collapsed .rule-summary { display: block; }
+/* 折叠单行内 × 按钮收缩，不撑高行 */
+.rule-card.collapsed .btn-remove {
+  min-width: 0; min-height: 0;
+  padding: 0 2px; font-size: 14px;
+}
+.rule-card-title {
+  font-weight: 600; font-size: 13px; color: var(--dc-text-primary);
+  /* 3px 主色侧条做区块标识（对齐主仓卡片风格），标题本身用正文色 */
+  border-left: 3px solid var(--dc-primary);
+  padding-left: 8px;
+}
 .btn-remove {
   background: none; border: none;
   color: var(--dc-text-tertiary); cursor: pointer;
@@ -516,7 +565,8 @@ select { width: 100%; }
   }
   .preview-new.changed {
     border-left-color: var(--dc-primary);
-    background: rgba(59, 130, 246, 0.06);
+    background: rgba(99,102,241,0.08);
+    background: color-mix(in srgb, var(--dc-primary) 8%, transparent);
   }
 
   /* 进度区 */

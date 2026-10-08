@@ -356,9 +356,16 @@
     var html = ''
     state.rules.forEach(function (rule, i) {
       var config = RULE_CONFIG[rule.type]
-      html += '<div class="rule-card">'
-      html += '<div class="rule-card-header">'
+      // 折叠摘要：第一个非空参数值（通常是正则/查找内容），折叠时与标题同处一行
+      var summary = ''
+      for (var k in rule.params) {
+        if (rule.params[k] !== '') { summary = String(rule.params[k]); break }
+      }
+      html += '<div class="rule-card' + (rule.collapsed ? ' collapsed' : '') + '">'
+      html += '<div class="rule-card-header" data-collapse="' + i + '">'
       html += '<span class="rule-card-title">' + config.label + '</span>'
+      if (summary) html += '<span class="rule-summary">' + esc(summary) + '</span>'
+      html += '<span class="collapse-icon">▾</span>'
       html += '<button class="btn-remove" data-idx="' + i + '">×</button>'
       html += '</div>'
 
@@ -384,6 +391,15 @@
     // 绑定事件
     list.querySelectorAll('.btn-remove').forEach(function (btn) {
       btn.addEventListener('click', function () { removeRule(parseInt(btn.getAttribute('data-idx'))) })
+    })
+    // 点击卡片头折叠/展开（× 按钮除外）；重渲染以刷新折叠摘要
+    list.querySelectorAll('.rule-card-header').forEach(function (hdr) {
+      hdr.addEventListener('click', function (e) {
+        if (e.target.closest('.btn-remove')) return
+        var ri = parseInt(hdr.getAttribute('data-collapse'))
+        state.rules[ri].collapsed = !state.rules[ri].collapsed
+        renderRules()
+      })
     })
     list.querySelectorAll('input, select').forEach(function (el) {
       el.addEventListener('input', function () {

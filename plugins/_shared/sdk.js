@@ -33,14 +33,19 @@
       _context = e.data.payload.context || {}
 
       // 注入宿主 CSS 变量
+      var root = document.documentElement
       var cssVars = e.data.payload.cssVars
       if (cssVars) {
-        var root = document.documentElement
         for (var key in cssVars) {
           if (cssVars.hasOwnProperty(key)) {
             root.style.setProperty(key, cssVars[key])
           }
         }
+      }
+
+      // 记录亮/暗主题，插件可按需差异化样式（如浅色下输入框用白底）
+      if (e.data.payload.theme) {
+        root.setAttribute('data-theme', e.data.payload.theme)
       }
 
       if (typeof _initCallback === 'function') {
