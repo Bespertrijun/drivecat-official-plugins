@@ -4,7 +4,6 @@
   --dc-primary-hover: #2563eb;
   --dc-bg-card: #ffffff;
   --dc-bg-elevated: #f8fafc;
-  --dc-bg-surface: #fdfdfd;
   --dc-text-primary: #1e293b;
   --dc-text-secondary: #475569;
   --dc-text-tertiary: #94a3b8;
@@ -18,7 +17,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--dc-bg-surface);
+  /* 透明背景——由宿主面板提供主题化底色，随主仓亮/暗色系走 */
+  background: transparent;
   color: var(--dc-text-primary);
   padding: 20px 24px;
   font-size: 14px;
