@@ -67,7 +67,7 @@
     }
 
     loadTemplates()
-    DriveCat.resize()
+    resizePanel()
   })
 
   // ══════════════════════════════════
@@ -120,7 +120,7 @@
       doExecutionPreview()
     }
 
-    DriveCat.resize()
+    resizePanel()
   }
 
   function updateScopeHint(elementId) {
@@ -169,7 +169,7 @@
       state.files = data.files || data || []
       renderFileList(state.files)
       renderBreadcrumb()
-      DriveCat.resize()
+      resizePanel()
     }).catch(function () {
       renderFileList([])
     })
@@ -349,7 +349,7 @@
     var list = document.getElementById('rules-list')
     if (state.rules.length === 0) {
       list.innerHTML = '<div class="status-msg" style="padding:12px">暂无规则</div>'
-      DriveCat.resize()
+      resizePanel()
       return
     }
 
@@ -411,7 +411,7 @@
         }
       })
     })
-    DriveCat.resize()
+    resizePanel()
   }
 
   var previewTimer = null
@@ -452,7 +452,7 @@
       })
       .finally(function () {
         area.style.opacity = '1'
-        DriveCat.resize()
+        resizePanel()
       })
   }
 
@@ -485,7 +485,7 @@
         area.innerHTML = '<div class="status-msg" style="color:var(--dc-error)">预览加载失败: ' + e.message + '</div>'
       })
       .finally(function() {
-        DriveCat.resize()
+        resizePanel()
       })
   }
 
@@ -694,6 +694,16 @@
   // ══════════════════════════════════
   //  Helpers
   // ══════════════════════════════════
+
+  /**
+   * 通知宿主调整 iframe 高度。右键弹窗受宿主 modal max-height（常见 70-85vh）
+   * 限制，上报保守高度保证 iframe 不超出弹窗；超出的内容由面板内部滚动接管。
+   */
+  function resizePanel() {
+    var max = 700
+    if (state.mode === 'contextmenu') max = window.innerWidth <= 600 ? 480 : 560
+    DriveCat.resize(max)
+  }
 
   function getRuleSpecs() {
     return state.rules.map(function (r) {

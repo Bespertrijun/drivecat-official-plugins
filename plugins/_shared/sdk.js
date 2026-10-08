@@ -114,13 +114,17 @@
      */
     resize: function (maxHeight) {
       // 测量 body 而非 documentElement——iframe 中 documentElement.scrollHeight
-      // 永远 >= 视口高度，导致 iframe 只涨不缩
+      // 永远 >= 视口高度，导致 iframe 只涨不缩。
+      // data-resizing 标记让插件 CSS 借机展开内部滚动容器（overflow:auto 的
+      // 子元素不会把溢出内容计入祖先 scrollHeight，不展开会测出偏小的高度）
       var body = document.body
       var prevH = body.style.height
       var prevO = body.style.overflow
+      body.setAttribute('data-resizing', '')
       body.style.height = '0'
       body.style.overflow = 'visible'
       var h = body.scrollHeight
+      body.removeAttribute('data-resizing')
       body.style.height = prevH
       body.style.overflow = prevO
       var max = maxHeight || 700
