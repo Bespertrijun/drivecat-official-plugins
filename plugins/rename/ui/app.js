@@ -81,7 +81,9 @@
         DriveCat.toast('请先选择网盘', 'warning')
         return
       }
-      if (state.selectedFileIds.length === 0) {
+      // 右键目录已通过 parentId 指定目标，无需再勾选目录内的文件。
+      var hasContextDirectory = state.mode === 'contextmenu' && state.scopeMode === 'dir'
+      if (state.selectedFileIds.length === 0 && !hasContextDirectory) {
         DriveCat.toast('请至少选择一个文件或目录', 'warning')
         return
       }
