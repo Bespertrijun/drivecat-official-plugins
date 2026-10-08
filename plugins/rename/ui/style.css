@@ -361,12 +361,14 @@ select { width: 100%; }
 }
 
 /* ── 响应式 (Mobile Adaptation) ── */
-/* 设计原则：
+/* 断点 600px：桌面右键弹窗内容宽约 700px，必须走桌面布局，
+   否则大 padding/堆叠预览会把内容撑出弹窗；手机（≤430px）仍命中。
+   设计原则：
    - 字号下限 14px，关键内容 15-16px
    - 触摸目标 ≥ 44px（按钮、列表项、复选框）
    - 视觉层级靠字号差和间距，不靠灰度
 */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
   body {
     padding: 16px;
     font-size: 15px;
