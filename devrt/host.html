@@ -881,7 +881,8 @@
           break
         case 'plugin.resize':
           var h = e.data.payload.height
-          if (src) src.style.height = h + 'px'
+          // flex:1 的 flex-basis:0% 会覆盖显式 height，需先脱离 flex 布局
+          if (src) { src.style.flex = 'none'; src.style.height = h + 'px' }
           addLog('resize', 'height=' + h + 'px')
           break
         case 'plugin.close':

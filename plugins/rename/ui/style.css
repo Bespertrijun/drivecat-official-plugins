@@ -112,6 +112,11 @@ select { width: 100%; }
   display: flex; justify-content: space-between;
   margin-top: 24px; padding-top: 16px;
   border-top: 1px solid var(--dc-border);
+  /* 吸底：右键弹窗里 iframe 高度不可控（宿主可能忽略 resize），
+     保证「上一步/下一步/执行」按钮始终可见可点 */
+  position: sticky; bottom: 0;
+  background: var(--dc-bg-card);
+  z-index: 5;
 }
 
 /* ── 面包屑 ── */
@@ -471,6 +476,8 @@ select { width: 100%; }
     gap: 10px;
     padding-top: 16px;
     margin-top: 20px;
+    /* 避开全面屏底部手势条 */
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .step-actions .btn {
     flex: 1;

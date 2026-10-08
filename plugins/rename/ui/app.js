@@ -67,7 +67,7 @@
     }
 
     loadTemplates()
-    DriveCat.resize(900)
+    DriveCat.resize()
   })
 
   // ══════════════════════════════════
@@ -120,7 +120,7 @@
       doExecutionPreview()
     }
 
-    DriveCat.resize(900)
+    DriveCat.resize()
   }
 
   function updateScopeHint(elementId) {
@@ -169,7 +169,7 @@
       state.files = data.files || data || []
       renderFileList(state.files)
       renderBreadcrumb()
-      DriveCat.resize(900)
+      DriveCat.resize()
     }).catch(function () {
       renderFileList([])
     })
@@ -349,7 +349,7 @@
     var list = document.getElementById('rules-list')
     if (state.rules.length === 0) {
       list.innerHTML = '<div class="status-msg" style="padding:12px">暂无规则</div>'
-      DriveCat.resize(900)
+      DriveCat.resize()
       return
     }
 
@@ -395,7 +395,7 @@
         }
       })
     })
-    DriveCat.resize(900)
+    DriveCat.resize()
   }
 
   var previewTimer = null
@@ -436,7 +436,7 @@
       })
       .finally(function () {
         area.style.opacity = '1'
-        DriveCat.resize(900)
+        DriveCat.resize()
       })
   }
 
@@ -469,7 +469,7 @@
         area.innerHTML = '<div class="status-msg" style="color:var(--dc-error)">预览加载失败: ' + e.message + '</div>'
       })
       .finally(function() {
-        DriveCat.resize(900)
+        DriveCat.resize()
       })
   }
 
