@@ -6,6 +6,7 @@ RenameManager — 重命名高层管理器。
 """
 
 import asyncio
+import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
@@ -106,16 +107,17 @@ class RenameManager:
         """
         执行批量重命名（非流式，一次返回全部结果）。
 
-        采用批次流控：每批最多 `concurrency` 个文件并发，
-        批与批之间暂停 `pause_ms` 毫秒避免限流。
+        采用 worker 池流控：`concurrency` 个 worker 各自从队列取任务，
+        每完成一个暂停 `pause_ms` 毫秒。单个慢请求只占住一个 worker，
+        不会像批次屏障那样拖住整体。
 
         Args:
-            drive: Drive 实例（需有 rename 方法）
+            drive: Drive 实例（需有 rename 方法，返回 bool）
             parent_id: 目录 ID
             rule_specs: 规则列表
             file_ids: 限定文件 ID
-            concurrency: 每批并发数
-            pause_ms: 批与批之间的暂停时长（毫秒）
+            concurrency: 并发 worker 数
+            pause_ms: 每个任务完成后的暂停时长（毫秒）
         """
         if concurrency < 1:
             concurrency = 1
@@ -126,24 +128,41 @@ class RenameManager:
             if new_name == f.name:
                 return ("skipped", {"file_id": f.id, "name": f.name, "status": "skipped"})
             try:
-                await drive.rename(f.id, new_name)
-                logger.debug(f"[Rename] {f.name} → {new_name}")
-                return ("success", {
-                    "file_id": f.id, "original": f.name,
-                    "new": new_name, "status": "success",
-                })
+                ok = await drive.rename(f.id, new_name)
             except Exception as exc:
                 logger.warning(f"[Rename] Failed to rename {f.name}: {exc}")
                 return ("failed", {
                     "file_id": f.id, "name": f.name,
                     "error": str(exc), "status": "failed",
                 })
+            if not ok:
+                # 驱动吞了异常只返回 False（超时场景下实际可能已生效）
+                logger.warning(f"[Rename] {f.name} → {new_name}: drive returned falsy")
+                return ("failed", {
+                    "file_id": f.id, "name": f.name,
+                    "error": "驱动未确认成功（可能超时），请核对网盘实际状态",
+                    "status": "failed",
+                })
+            logger.debug(f"[Rename] {f.name} → {new_name}")
+            return ("success", {
+                "file_id": f.id, "original": f.name,
+                "new": new_name, "status": "success",
+            })
 
         pause_sec = max(0, pause_ms) / 1000
-        for batch_start in range(0, len(plan), concurrency):
-            batch = plan[batch_start : batch_start + concurrency]
-            outcomes = await asyncio.gather(*[rename_one(f, n) for _, f, n in batch])
-            for status, detail in outcomes:
+        started = time.monotonic()
+
+        work_q: asyncio.Queue = asyncio.Queue()
+        for item in plan:
+            work_q.put_nowait(item)
+
+        async def worker():
+            while True:
+                try:
+                    _, f, new_name = work_q.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                status, detail = await rename_one(f, new_name)
                 if status == "success":
                     result.success += 1
                 elif status == "failed":
@@ -151,14 +170,21 @@ class RenameManager:
                 else:
                     result.skipped += 1
                 result.details.append(detail)
+                if pause_sec > 0:
+                    await asyncio.sleep(pause_sec)
 
-            # 批间暂停（最后一批不暂停）
-            if pause_sec > 0 and batch_start + concurrency < len(plan):
-                await asyncio.sleep(pause_sec)
+        workers = [
+            asyncio.create_task(worker())
+            for _ in range(min(concurrency, len(plan)))
+        ]
+        await asyncio.gather(*workers)
 
+        elapsed = time.monotonic() - started
+        rate = len(plan) / elapsed if elapsed > 0 else 0.0
         logger.info(
             f"[Rename] Done: {result.success} success, "
-            f"{result.failed} failed, {result.skipped} skipped"
+            f"{result.failed} failed, {result.skipped} skipped, "
+            f"{elapsed:.1f}s ({rate:.1f}/s)"
         )
         return result
 
@@ -174,13 +200,14 @@ class RenameManager:
         """
         流式执行批量重命名，逐条 yield 事件给 SSE。
 
-        采用批次流控：每批最多 `concurrency` 个文件并发，
-        批内逐个 yield 完成事件；批与批之间暂停 `pause_ms` 毫秒。
+        采用 worker 池流控：`concurrency` 个 worker 各自从队列取任务，
+        每完成一个暂停 `pause_ms` 毫秒；完成事件按实际完成顺序 yield。
+        单个慢请求只占住一个 worker，不会像批次屏障那样拖住整体。
 
         事件格式：
           {"type": "start", "total": N}
           {"type": "progress", "index": i, "file_id": "...", "original": "...", "new": "...", "status": "success|skipped|failed"}
-          {"type": "done", "total": N, "success": S, "failed": F, "skipped": K}
+          {"type": "done", "total": N, "success": S, "failed": F, "skipped": K, "elapsed_ms": E, "rate": R}
         """
         if concurrency < 1:
             concurrency = 1
@@ -202,14 +229,7 @@ class RenameManager:
                     "new": new_name, "status": "skipped",
                 }
             try:
-                await drive.rename(f.id, new_name)
-                success += 1
-                logger.debug(f"[Rename] {f.name} → {new_name}")
-                return {
-                    "type": "progress", "index": idx,
-                    "file_id": f.id, "original": f.name,
-                    "new": new_name, "status": "success",
-                }
+                ok = await drive.rename(f.id, new_name)
             except Exception as exc:
                 failed += 1
                 logger.warning(f"[Rename] Failed: {f.name}: {exc}")
@@ -219,29 +239,67 @@ class RenameManager:
                     "new": new_name, "status": "failed",
                     "error": str(exc),
                 }
+            if not ok:
+                # 驱动吞了异常只返回 False（超时场景下实际可能已生效）
+                failed += 1
+                logger.warning(f"[Rename] {f.name} → {new_name}: drive returned falsy")
+                return {
+                    "type": "progress", "index": idx,
+                    "file_id": f.id, "original": f.name,
+                    "new": new_name, "status": "failed",
+                    "error": "驱动未确认成功（可能超时），请核对网盘实际状态",
+                }
+            success += 1
+            logger.debug(f"[Rename] {f.name} → {new_name}")
+            return {
+                "type": "progress", "index": idx,
+                "file_id": f.id, "original": f.name,
+                "new": new_name, "status": "success",
+            }
 
         pause_sec = max(0, pause_ms) / 1000
-        for batch_start in range(0, total, concurrency):
-            batch = plan[batch_start : batch_start + concurrency]
-            # 批内并发，as_completed 让先完成的先 yield
-            coros = [rename_one(idx, f, n) for idx, f, n in batch]
-            for coro in asyncio.as_completed(coros):
-                event = await coro
-                yield event
+        started = time.monotonic()
 
-            # 批间暂停（最后一批不暂停）
-            if pause_sec > 0 and batch_start + concurrency < total:
-                await asyncio.sleep(pause_sec)
+        work_q: asyncio.Queue = asyncio.Queue()
+        event_q: asyncio.Queue = asyncio.Queue()
+        for item in plan:
+            work_q.put_nowait(item)
 
+        async def worker():
+            while True:
+                try:
+                    idx, f, new_name = work_q.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                # rename_one 内部已兜底所有预期异常，保证每个任务恰好产出一条事件
+                await event_q.put(await rename_one(idx, f, new_name))
+                if pause_sec > 0:
+                    await asyncio.sleep(pause_sec)
+
+        workers = [
+            asyncio.create_task(worker())
+            for _ in range(min(concurrency, total))
+        ]
+        remaining = total
+        while remaining > 0:
+            yield await event_q.get()
+            remaining -= 1
+        await asyncio.gather(*workers)
+
+        elapsed = time.monotonic() - started
+        rate = round(total / elapsed, 2) if elapsed > 0 else 0.0
         yield {
             "type": "done",
             "total": total,
             "success": success,
             "failed": failed,
             "skipped": skipped,
+            "elapsed_ms": int(elapsed * 1000),
+            "rate": rate,
         }
 
         logger.info(
             f"[Rename] Stream done: {success} success, "
-            f"{failed} failed, {skipped} skipped"
+            f"{failed} failed, {skipped} skipped, "
+            f"{elapsed:.1f}s ({rate:.1f}/s)"
         )

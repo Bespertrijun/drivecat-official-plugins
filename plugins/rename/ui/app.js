@@ -634,6 +634,14 @@
     document.getElementById('progress-stats').textContent = '连接中...'
     document.getElementById('run-summary').style.display = 'none'
 
+    // 实时计时：请求挂起时计时仍在走，用户能感知任务还活着
+    var execStartTs = Date.now()
+    var statsBase = '连接中...'
+    var elapsedTimer = setInterval(function () {
+      document.getElementById('progress-stats').textContent =
+        statsBase + ' · ' + formatElapsed(Date.now() - execStartTs)
+    }, 250)
+
     var body = buildRequestBody()
     body.concurrency = state.concurrency
     body.pause_ms = state.pauseMs
@@ -666,10 +674,13 @@
       var failedIds = []
       var finished = false
 
-      function finishOnce(s, f, k) {
+      function finishOnce(s, f, k, elapsedMs, rate) {
         if (finished) return
         finished = true
-        finishExecution(s, f, k, failedIds)
+        clearInterval(elapsedTimer)
+        // 服务端没带耗时时（异常断流）用客户端计时兜底
+        if (typeof elapsedMs !== 'number') elapsedMs = Date.now() - execStartTs
+        finishExecution(s, f, k, failedIds, elapsedMs, rate)
       }
 
       function pump() {
@@ -693,17 +704,17 @@
               var event = JSON.parse(payload)
               if (event.type === 'start') {
                 total = event.total
-                document.getElementById('progress-stats').textContent = '0 / ' + total
+                statsBase = '0 / ' + total
               } else if (event.type === 'progress') {
                 done_count++
                 if (event.status === 'success') success++
                 if (event.status === 'failed') { failed++; failedIds.push(event.file_id) }
                 var pct = Math.round((done_count / total) * 100)
                 document.getElementById('progress-fill').style.width = pct + '%'
-                document.getElementById('progress-stats').textContent = done_count + ' / ' + total + '  (' + pct + '%)'
+                statsBase = done_count + ' / ' + total + '  (' + pct + '%)'
                 appendLog(event)
               } else if (event.type === 'done') {
-                finishOnce(event.success, event.failed, event.skipped)
+                finishOnce(event.success, event.failed, event.skipped, event.elapsed_ms, event.rate)
               }
             } catch (e) { /* ignore parse errors */ }
           })
@@ -715,6 +726,7 @@
 
       return pump()
     }).catch(function (e) {
+      clearInterval(elapsedTimer)
       DriveCat.toast('执行失败: ' + e.message, 'error')
       resetExecutionUI()
     })
@@ -750,11 +762,15 @@
     log.scrollTop = log.scrollHeight
   }
 
-  function finishExecution(success, failed, skipped, failedIds) {
+  function finishExecution(success, failed, skipped, failedIds, elapsedMs, rate) {
     state.executing = false
     document.getElementById('btn-back-2').disabled = false
     var btn = document.getElementById('btn-execute')
     var summaryEl = document.getElementById('run-summary')
+
+    var timing = ''
+    if (typeof elapsedMs === 'number') timing += ' · 耗时 ' + formatElapsed(elapsedMs)
+    if (typeof rate === 'number' && rate > 0) timing += ' · ' + rate.toFixed(1) + ' 个/秒'
 
     if (failed > 0) {
       // 部分失败：按钮换成重试入口，只重跑失败的文件
@@ -763,7 +779,7 @@
       btn.textContent = '↺ 重试失败项 (' + failed + ')'
       summaryEl.className = 'run-summary warn'
       summaryEl.textContent = '⚠ 完成：成功 ' + success + '，失败 ' + failed +
-        (skipped > 0 ? '，跳过 ' + skipped : '')
+        (skipped > 0 ? '，跳过 ' + skipped : '') + timing
     } else {
       // 全部完成：完成态禁用，防止重复点击对已改名文件二次应用规则
       btn.disabled = true
@@ -771,7 +787,7 @@
       btn.classList.add('btn-finished')
       summaryEl.className = 'run-summary ok'
       summaryEl.textContent = '✓ 全部完成：成功 ' + success +
-        (skipped > 0 ? '，跳过 ' + skipped : '')
+        (skipped > 0 ? '，跳过 ' + skipped : '') + timing
     }
     summaryEl.style.display = 'block'
 
@@ -849,6 +865,12 @@
     var b = bytes
     while (b >= 1024 && i < units.length - 1) { b /= 1024; i++ }
     return b.toFixed(i > 0 ? 1 : 0) + ' ' + units[i]
+  }
+
+  function formatElapsed(ms) {
+    var s = ms / 1000
+    if (s < 60) return s.toFixed(1) + ' 秒'
+    return Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒'
   }
 
   function esc(s) {

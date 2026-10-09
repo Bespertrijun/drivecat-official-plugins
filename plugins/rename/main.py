@@ -44,7 +44,7 @@ class RenameRequest(BaseModel):
 
 
 class ExecuteRequest(RenameRequest):
-    """执行重命名请求体，批次流控。"""
+    """执行重命名请求体，worker 池流控。"""
 
     concurrency: int = Field(default=10, ge=1, le=50)
     pause_ms: int = Field(default=1000, ge=0, le=60000)

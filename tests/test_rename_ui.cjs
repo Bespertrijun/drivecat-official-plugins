@@ -14,6 +14,8 @@ function openPlugin(context, opts = {}) {
         classList: {
           toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name) },
           contains(name) { return classes.has(name) },
+          add(name) { classes.add(name) },
+          remove(name) { classes.delete(name) },
         },
         addEventListener() {}, querySelectorAll() { return [] }, appendChild() {},
       })
@@ -35,6 +37,7 @@ function openPlugin(context, opts = {}) {
     DriveCat: {
       onInit(callback) { init = callback }, resize() {},
       toast(message) { warnings.push(message) },
+      getContext() { return {} },
       api(method, path, body) {
         if (method === 'GET' && path === '/rename/templates') {
           return Promise.resolve({ templates: opts.templates || [] })
@@ -43,8 +46,29 @@ function openPlugin(context, opts = {}) {
         return new Promise(() => {})
       },
     },
-    fetch() { return new Promise(() => {}) },
+    fetch: opts.sse
+      ? function () {
+        const chunks = opts.sse.slice()
+        return Promise.resolve({
+          ok: true,
+          body: {
+            getReader() {
+              return {
+                read() {
+                  const next = chunks.shift()
+                  return Promise.resolve(next === undefined
+                    ? { done: true }
+                    : { done: false, value: Buffer.from(next) })
+                },
+              }
+            },
+          },
+        })
+      }
+      : function () { return new Promise(() => {}) },
     setTimeout(callback) { preview = callback }, clearTimeout() {},
+    setInterval() { return 0 }, clearInterval() {},
+    TextDecoder: require('node:util').TextDecoder,
   }
   vm.runInNewContext(readFileSync(join(__dirname, '../plugins/rename/ui/app.js'), 'utf8'), sandbox)
   init(context)
@@ -111,4 +135,30 @@ test('digit-only regex replacement stays a string (backend re.sub would 500 on i
     const body = JSON.parse(JSON.stringify(ui.requests.find(r => r.path === '/rename/preview').body))
     assert.equal(body.rules[0].params.replacement, '123456')
   }
+})
+
+
+test('execute shows elapsed time and rate from the done event', async () => {
+  const ui = openPlugin(
+    { drive_id: 7, parent_id: 'root', selected_file: { id: 'folder', is_dir: true } },
+    { sse: [
+      'data: {"type":"start","total":2}\n\n',
+      'data: {"type":"progress","index":0,"file_id":"a","original":"a.mkv","new":"b.mkv","status":"success"}\n\n',
+      'data: {"type":"progress","index":1,"file_id":"b","original":"c.mkv","new":"d.mkv","status":"success"}\n\n',
+      'data: {"type":"done","total":2,"success":2,"failed":0,"skipped":0,"elapsed_ms":42300,"rate":3.71}\n\n',
+      'data: [DONE]\n\n',
+    ] },
+  )
+  ui.element('new-rule-type').value = 'case'
+  ui.app.addRule()
+  ui.app.doExecute()
+  for (let i = 0; i < 10 && !ui.element('run-summary').textContent; i++) {
+    await new Promise(r => setImmediate(r))
+  }
+  const summary = ui.element('run-summary')
+  assert.match(summary.textContent, /成功 2/)
+  assert.match(summary.textContent, /耗时 42\.3 秒/)
+  assert.match(summary.textContent, /3\.7 个\/秒/)
+  assert.equal(ui.element('btn-execute').textContent, '✓ 已完成')
+  assert.equal(ui.element('btn-execute').disabled, true)
 })
