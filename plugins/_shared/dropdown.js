@@ -1,5 +1,5 @@
 /**
- * DriveCat 自绘下拉组件 v1 — 对齐主仓下拉框视觉（浮层卡片 + 选项 hover 高亮）
+ * DriveCat 自绘下拉组件 v1 — 对齐主仓下拉框视觉（浮层卡片 + 选项 hover 高亮 + 开合过渡）
  *
  * 用法：
  *   DriveCatDropdown.enhance(document.querySelector('select'))
@@ -27,15 +27,24 @@
     + '.dc-select-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
     + '.dc-select-chevron{flex-shrink:0;color:var(--dc-text-tertiary);transition:transform .15s}'
     + '.dc-select.open .dc-select-chevron{transform:rotate(180deg)}'
-    + '.dc-select-menu{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:20;'
+    + '.dc-select-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:20;'
     + 'background:var(--dc-bg-card);border:1px solid var(--dc-border);border-radius:8px;'
     + 'box-shadow:0 8px 24px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.08);'
-    + 'padding:4px;max-height:220px;overflow-y:auto}'
-    + '.dc-select.open .dc-select-menu{display:block}'
+    + 'padding:4px;max-height:220px;overflow-y:auto;'
+    /* 开合动画：关态 visibility:hidden 且延迟切换，让淡出播完再隐藏，纯 CSS 双向动画 */
+    + 'opacity:0;transform:translateY(-4px);visibility:hidden;'
+    + 'transition:opacity .15s ease,transform .15s ease,visibility 0s linear .15s}'
+    + '.dc-select.open .dc-select-menu{opacity:1;transform:translateY(0);visibility:visible;'
+    + 'transition:opacity .15s ease,transform .15s ease}'
     + '.dc-select-option{padding:6px 10px;border-radius:4px;font-size:13px;'
     + 'color:var(--dc-text-primary);cursor:pointer;'
-    + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+    + 'transition:background .1s ease}'
     + '.dc-select-option:hover{background:var(--dc-bg-hover,var(--dc-bg-elevated))}'
+    /* 系统偏好减弱动态时停用开合动画 */
+    + '@media (prefers-reduced-motion:reduce){'
+    + '.dc-select-menu,.dc-select.open .dc-select-menu{transition:none}'
+    + '}'
     + '.dc-select-option.selected{color:var(--dc-primary);font-weight:600}'
     /* 浅色：toggle 白底（与插件 input 的浅色规则一致） */
     + '[data-theme="light"] .dc-select-toggle{background:var(--dc-bg-card);'
