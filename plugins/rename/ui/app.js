@@ -411,7 +411,16 @@
         }
       })
     })
+    enhanceSelects(list)
     resizePanel()
+  }
+
+  // 自绘下拉（dropdown.js 未加载时静默跳过，保持原生 select 可用）
+  function enhanceSelects(root) {
+    if (!window.DriveCatDropdown) return
+    root.querySelectorAll('select').forEach(function (s) {
+      window.DriveCatDropdown.enhance(s)
+    })
   }
 
   var previewTimer = null
@@ -788,4 +797,7 @@
       closeModal()
     }
   })
+
+  // 包装静态 select（网盘/模板/规则类型）；动态选项变化由组件内 MutationObserver 同步
+  enhanceSelects(document)
 })()

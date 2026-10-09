@@ -123,11 +123,30 @@ input[type="text"], input[type="number"], select {
 input:focus, select:focus { border-color: var(--dc-primary); }
 select { width: 100%; }
 
+/* 下拉框：去掉系统默认箭头，自绘 chevron（中性灰，亮暗主题通用），
+   补 hover 反馈；展开的选项列表样式由浏览器原生渲染，无法定制 */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239898aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+select:hover { border-color: var(--dc-border-hover, var(--dc-border)); }
+/* 部分浏览器（Firefox 等）会读取 option 颜色，改善深色下展开列表的观感 */
+select option {
+  background: var(--dc-bg-card);
+  color: var(--dc-text-primary);
+}
+
 /* 浅色主题：白底 + 略深的边框（灰底显脏）；深色保持 --dc-bg-input 的下沉感 */
 [data-theme="light"] input[type="text"],
 [data-theme="light"] input[type="number"],
 [data-theme="light"] select {
-  background: var(--dc-bg-card);
+  /* 注意用 background-color：简写 background 会冲掉 select 的自绘箭头 */
+  background-color: var(--dc-bg-card);
   border-color: var(--dc-border-hover, rgba(0, 0, 0, 0.14));
 }
 
@@ -215,7 +234,8 @@ select { width: 100%; }
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px;
 }
-.template-bar select { flex: 1; }
+/* select 被自绘下拉包装后 flex 项是 .dc-select 容器 */
+.template-bar select, .template-bar .dc-select { flex: 1; }
 
 /* ── 规则卡片 ── */
 .rule-card {
@@ -275,7 +295,7 @@ select { width: 100%; }
 .add-rule-row {
   display: flex; gap: 8px; margin-bottom: 20px;
 }
-.add-rule-row select { flex: 1; }
+.add-rule-row select, .add-rule-row .dc-select { flex: 1; }
 
 /* ── 预览 ── */
 .preview-section { margin-top: 20px; }
