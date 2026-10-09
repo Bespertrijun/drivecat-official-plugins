@@ -46,6 +46,32 @@ body {
   overflow: visible !important;
 }
 
+/* ── 动效 ── */
+@keyframes dc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dc-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dc-modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 系统偏好减弱动态时全部停用 */
+@media (prefers-reduced-motion: reduce) {
+  .step-panel.active, .modal-overlay, .modal-content, .rule-card.entering,
+  .rule-card.collapsed .rule-summary, .execution-preview .preview-row,
+  .log-item, .selection-info, .progress-section, .run-summary {
+    animation: none !important;
+  }
+  .rule-card, .rule-card-header, .rule-body,
+  #preview-area, .execution-preview {
+    transition: none !important;
+  }
+}
+
 /* ── 步骤导航 ── */
 .steps-bar {
   display: flex;
@@ -92,6 +118,8 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* 切换步骤时淡入上移；transform/opacity 不影响高度测量 */
+  animation: dc-rise 0.25s ease;
 }
 
 .panel-header { margin-bottom: 20px; }
@@ -166,6 +194,7 @@ select option {
 .btn-primary { background: var(--dc-primary); color: #fff; }
 .btn-primary:hover { background: var(--dc-primary-hover); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:active { transform: scale(0.97); }
 .btn-secondary { background: var(--dc-bg-elevated); color: var(--dc-text-primary); border: 1px solid var(--dc-border); }
 .btn-secondary:hover { filter: brightness(0.96); }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
@@ -173,14 +202,11 @@ select option {
 
 .step-actions {
   display: flex; justify-content: space-between;
-  /* margin-top:auto：内容不足一屏时贴面板底部；超高时随文档流，
-     由 sticky bottom:0 吸在面板可视底部（面板是滚动容器） */
-  margin-top: auto; padding-top: 16px;
+  /* 跟随内容流：内容短时紧跟其后，长时随面板滚动到底可见，
+     不做吸底固定（面板自身是滚动容器，滑动由插件内接管） */
+  margin-top: 24px; padding-top: 16px;
   border-top: 1px solid var(--dc-border);
-  position: sticky; bottom: 0;
   flex-shrink: 0;
-  background: var(--dc-bg-card);
-  z-index: 5;
 }
 
 /* ── 面包屑 ── */
@@ -227,6 +253,7 @@ select option {
   background: color-mix(in srgb, var(--dc-primary) 8%, transparent);
   border-radius: 6px;
   font-size: 12px; color: var(--dc-primary);
+  animation: dc-fade-in 0.2s ease;
 }
 
 /* ── 模板区（无外框，裸控件排列） ── */
@@ -243,12 +270,27 @@ select option {
   border: 1px solid var(--dc-border);
   border-radius: 8px; padding: 14px;
   margin-bottom: 10px;
+  /* 折叠/展开时的内边距与间距过渡 */
+  transition: padding 0.25s ease, margin-bottom 0.25s ease;
+}
+/* 新卡片的入场动画（添加规则时打 .entering 标记，渲染后即清除，只播一次） */
+.rule-card.entering { animation: dc-rise 0.25s ease; }
+/* 移除卡片的出场：JS 锁定高度后归零，配合淡出/位移/收边，播完才真正删除 */
+.rule-card.leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+  overflow: hidden;
+  pointer-events: none;
+  padding-top: 0; padding-bottom: 0; margin-bottom: 0; border-width: 0;
+  transition: height 0.2s ease, opacity 0.15s ease, transform 0.15s ease,
+              padding 0.2s ease, margin-bottom 0.2s ease, border-width 0.2s ease;
 }
 .rule-card-header {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
   /* 点击卡片头折叠/展开 */
   cursor: pointer; user-select: none;
+  transition: margin-bottom 0.25s ease;
 }
 .collapse-icon {
   margin-left: auto;
@@ -267,8 +309,15 @@ select option {
 /* 折叠态收成单行列表项 */
 .rule-card.collapsed { padding: 8px 12px; margin-bottom: 6px; }
 .rule-card.collapsed .rule-card-header { margin-bottom: 0; }
-.rule-card.collapsed .rule-field { display: none; }
-.rule-card.collapsed .rule-summary { display: block; }
+.rule-card.collapsed .rule-summary { display: block; animation: dc-fade-in 0.25s ease; }
+/* 字段区用 grid 行高做折叠/展开动画；不支持该过渡的浏览器退化为瞬时折叠 */
+.rule-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.25s ease;
+}
+.rule-body-inner { min-height: 0; overflow: hidden; }
+.rule-card.collapsed .rule-body { grid-template-rows: 0fr; }
 /* 折叠单行内 × 按钮收缩，不撑高行 */
 .rule-card.collapsed .btn-remove {
   min-width: 0; min-height: 0;
@@ -304,11 +353,15 @@ select option {
   border: 1px solid var(--dc-border); border-radius: 8px;
   max-height: 240px; overflow-y: auto;
   background: var(--dc-bg-card);
+  /* 预览刷新时的变淡/恢复平滑过渡 */
+  transition: opacity 0.15s ease;
 }
 .preview-row {
   display: flex; justify-content: space-between;
   padding: 7px 14px; border-bottom: 1px solid var(--dc-border);
   font-size: 12px;
+  /* 数字等宽：等长文件名右对齐时左边缘也齐，避免比例数字造成的视觉错位 */
+  font-variant-numeric: tabular-nums;
 }
 .preview-row:last-child { border-bottom: none; }
 .preview-old { color: var(--dc-text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -321,7 +374,10 @@ select option {
   max-height: 240px; overflow-y: auto;
   background: var(--dc-bg-card);
   margin-bottom: 20px;
+  transition: opacity 0.15s ease;
 }
+/* 最终预览只在进入 Step 3 时渲染一次，行淡入不会反复闪 */
+.execution-preview .preview-row { animation: dc-fade-in 0.25s ease; }
 
 /* ── 流控控件行（与预览之间用 border-top 分隔） ── */
 .flow-control-row {
@@ -341,7 +397,7 @@ select option {
 #pause-ms { width: 100px; }
 
 /* ── 进度 ── */
-.progress-section { margin-top: 20px; }
+.progress-section { margin-top: 20px; animation: dc-fade-in 0.2s ease; }
 .progress-bar-track {
   height: 8px; background: var(--dc-bg-elevated);
   border-radius: 4px; overflow: hidden;
@@ -356,6 +412,25 @@ select option {
   text-align: center; font-size: 13px; font-weight: 600;
   margin-top: 8px; color: var(--dc-text-secondary);
 }
+/* 执行结果小结：常驻显示，替代一闪而过的 toast 作为收尾 */
+.run-summary {
+  margin-top: 10px; padding: 8px 12px; border-radius: 6px;
+  font-size: 13px; font-weight: 600;
+  animation: dc-fade-in 0.25s ease;
+}
+.run-summary.ok {
+  color: var(--dc-success);
+  background: rgba(16,185,129,0.10);
+  background: color-mix(in srgb, var(--dc-success) 10%, transparent);
+}
+.run-summary.warn {
+  color: var(--dc-warning);
+  background: rgba(245,158,11,0.12);
+  background: color-mix(in srgb, var(--dc-warning) 12%, transparent);
+}
+/* 执行完成态按钮：禁用但保持"完成"观感，防重复点击 */
+.btn-finished { background: var(--dc-success); color: #fff; }
+.btn-finished:disabled { opacity: 0.9; cursor: default; }
 .progress-log {
   margin-top: 12px; max-height: 200px; overflow-y: auto;
   border: 1px solid var(--dc-border); border-radius: 8px;
@@ -364,6 +439,7 @@ select option {
 .log-item {
   padding: 5px 12px; border-bottom: 1px solid var(--dc-border);
   display: flex; justify-content: space-between;
+  animation: dc-rise 0.2s ease;
 }
 .log-item:last-child { border-bottom: none; }
 .log-status { font-weight: 600; }
@@ -386,6 +462,7 @@ select option {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: dc-fade-in 0.15s ease;
 }
 .modal-content {
   background: var(--dc-bg-elevated);
@@ -394,6 +471,7 @@ select option {
   padding: 24px;
   width: 320px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  animation: dc-modal-in 0.2s ease;
 }
 .modal-content h3 {
   font-size: 16px;
@@ -637,6 +715,7 @@ select option {
     gap: 4px;
   }
   .log-status { font-size: 13px; }
+  .run-summary { font-size: 14px; padding: 10px 14px; }
 
   .status-msg {
     padding: 24px 16px;

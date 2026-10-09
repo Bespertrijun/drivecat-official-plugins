@@ -37,6 +37,7 @@
     concurrency: 10,
     pauseMs: 1000,
     executing: false,
+    retryFileIds: null,  // 上一轮失败的文件 ID（重试模式只跑这些）
   }
 
   // ── SDK Init ──
@@ -114,9 +115,10 @@
       triggerPreview()
     }
 
-    // 进入 Step 3 时更新提示并拉取最终预览
+    // 进入 Step 3 时更新提示、重置执行区并拉取最终预览
     if (n === 3) {
       updateScopeHint('step3-scope')
+      resetRunUI()
       doExecutionPreview()
     }
 
@@ -334,15 +336,33 @@
 
   function addRule() {
     var type = document.getElementById('new-rule-type').value
-    state.rules.push({ type: type, params: {} })
+    // entering 标记只用于新卡片的入场动画，renderRules 渲染后即清除
+    state.rules.push({ type: type, params: {}, entering: true })
     renderRules()
     triggerPreview()
   }
 
   function removeRule(idx) {
-    state.rules.splice(idx, 1)
-    renderRules()
-    triggerPreview()
+    var list = document.getElementById('rules-list')
+    var card = list.querySelectorAll('.rule-card')[idx]
+    var rule = state.rules[idx]
+    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (card && !reduceMotion) {
+      // 出场动画：锁定当前高度后归零并淡出，播完再按对象身份移除（防连点错位）
+      card.style.height = card.offsetHeight + 'px'
+      card.classList.add('leaving')
+      requestAnimationFrame(function () { card.style.height = '0px' })
+      setTimeout(function () {
+        var i = state.rules.indexOf(rule)
+        if (i >= 0) state.rules.splice(i, 1)
+        renderRules()
+        triggerPreview()
+      }, 220)
+    } else {
+      state.rules.splice(idx, 1)
+      renderRules()
+      triggerPreview()
+    }
   }
 
   function renderRules() {
@@ -361,14 +381,17 @@
       for (var k in rule.params) {
         if (rule.params[k] !== '') { summary = String(rule.params[k]); break }
       }
-      html += '<div class="rule-card' + (rule.collapsed ? ' collapsed' : '') + '">'
+      html += '<div class="rule-card' + (rule.collapsed ? ' collapsed' : '') + (rule.entering ? ' entering' : '') + '">'
       html += '<div class="rule-card-header" data-collapse="' + i + '">'
       html += '<span class="rule-card-title">' + config.label + '</span>'
-      if (summary) html += '<span class="rule-summary">' + esc(summary) + '</span>'
+      // 摘要 span 始终渲染（折叠时才显示），折叠切换时就地更新文本、不重渲染
+      html += '<span class="rule-summary">' + esc(summary) + '</span>'
       html += '<span class="collapse-icon">▾</span>'
       html += '<button class="btn-remove" data-idx="' + i + '">×</button>'
       html += '</div>'
 
+      // 字段区包一层 grid 容器，折叠/展开时做行高过渡
+      html += '<div class="rule-body"><div class="rule-body-inner">'
       config.fields.forEach(function (f) {
         var val = rule.params[f.key] || ''
         html += '<div class="rule-field">'
@@ -384,21 +407,36 @@
         }
         html += '</div>'
       })
+      html += '</div></div>'
       html += '</div>'
     })
     list.innerHTML = html
+    // 入场动画只播一次
+    state.rules.forEach(function (r) { delete r.entering })
 
     // 绑定事件
     list.querySelectorAll('.btn-remove').forEach(function (btn) {
       btn.addEventListener('click', function () { removeRule(parseInt(btn.getAttribute('data-idx'))) })
     })
-    // 点击卡片头折叠/展开（× 按钮除外）；重渲染以刷新折叠摘要
+    // 点击卡片头折叠/展开（× 按钮除外）。
+    // 就地切类 + 更新摘要文本，不做整树重渲染——重建 DOM 会让 CSS 过渡无从播放
     list.querySelectorAll('.rule-card-header').forEach(function (hdr) {
       hdr.addEventListener('click', function (e) {
         if (e.target.closest('.btn-remove')) return
         var ri = parseInt(hdr.getAttribute('data-collapse'))
-        state.rules[ri].collapsed = !state.rules[ri].collapsed
-        renderRules()
+        var rule = state.rules[ri]
+        rule.collapsed = !rule.collapsed
+        var summaryEl = hdr.querySelector('.rule-summary')
+        if (summaryEl) {
+          var summary = ''
+          for (var k in rule.params) {
+            if (rule.params[k] !== '') { summary = String(rule.params[k]); break }
+          }
+          summaryEl.textContent = summary
+        }
+        hdr.parentElement.classList.toggle('collapsed', rule.collapsed)
+        // 折叠动画结束后再测一次高度，避免上报动画中间态
+        setTimeout(resizePanel, 300)
       })
     })
     list.querySelectorAll('input, select').forEach(function (el) {
@@ -594,10 +632,16 @@
     document.getElementById('progress-log').innerHTML = ''
     document.getElementById('progress-fill').style.width = '0%'
     document.getElementById('progress-stats').textContent = '连接中...'
+    document.getElementById('run-summary').style.display = 'none'
 
     var body = buildRequestBody()
     body.concurrency = state.concurrency
     body.pause_ms = state.pauseMs
+    // 重试模式：只跑上一轮失败的文件，避免对已改名的文件二次应用规则
+    if (state.retryFileIds && state.retryFileIds.length > 0) {
+      body.file_ids = state.retryFileIds
+    }
+    state.retryFileIds = null
 
     var pluginId = (DriveCat.getContext() || {}).plugin_id || ''
     var url = API_BASE + '/api/plugins/' + pluginId + '/rename/execute'
@@ -619,12 +663,13 @@
       var done_count = 0
       var success = 0
       var failed = 0
+      var failedIds = []
       var finished = false
 
       function finishOnce(s, f, k) {
         if (finished) return
         finished = true
-        finishExecution(s, f, k)
+        finishExecution(s, f, k, failedIds)
       }
 
       function pump() {
@@ -652,7 +697,7 @@
               } else if (event.type === 'progress') {
                 done_count++
                 if (event.status === 'success') success++
-                if (event.status === 'failed') failed++
+                if (event.status === 'failed') { failed++; failedIds.push(event.file_id) }
                 var pct = Math.round((done_count / total) * 100)
                 document.getElementById('progress-fill').style.width = pct + '%'
                 document.getElementById('progress-stats').textContent = done_count + ' / ' + total + '  (' + pct + '%)'
@@ -677,9 +722,22 @@
 
   function resetExecutionUI() {
     state.executing = false
-    document.getElementById('btn-execute').disabled = false
-    document.getElementById('btn-execute').textContent = '🚀 开始重命名'
+    var btn = document.getElementById('btn-execute')
+    btn.disabled = false
+    btn.textContent = '🚀 开始重命名'
+    btn.classList.remove('btn-finished')
     document.getElementById('btn-back-2').disabled = false
+  }
+
+  /** 每次进入 Step 3 重置执行区：新预览等于新一轮，清掉上一轮的完成/重试态 */
+  function resetRunUI() {
+    resetExecutionUI()
+    state.retryFileIds = null
+    document.getElementById('run-summary').style.display = 'none'
+    document.getElementById('progress-section').style.display = 'none'
+    document.getElementById('progress-log').innerHTML = ''
+    document.getElementById('progress-fill').style.width = '0%'
+    document.getElementById('progress-stats').textContent = '0 / 0'
   }
 
   function appendLog(event) {
@@ -692,8 +750,31 @@
     log.scrollTop = log.scrollHeight
   }
 
-  function finishExecution(success, failed, skipped) {
-    resetExecutionUI()
+  function finishExecution(success, failed, skipped, failedIds) {
+    state.executing = false
+    document.getElementById('btn-back-2').disabled = false
+    var btn = document.getElementById('btn-execute')
+    var summaryEl = document.getElementById('run-summary')
+
+    if (failed > 0) {
+      // 部分失败：按钮换成重试入口，只重跑失败的文件
+      state.retryFileIds = failedIds || []
+      btn.disabled = false
+      btn.textContent = '↺ 重试失败项 (' + failed + ')'
+      summaryEl.className = 'run-summary warn'
+      summaryEl.textContent = '⚠ 完成：成功 ' + success + '，失败 ' + failed +
+        (skipped > 0 ? '，跳过 ' + skipped : '')
+    } else {
+      // 全部完成：完成态禁用，防止重复点击对已改名文件二次应用规则
+      btn.disabled = true
+      btn.textContent = '✓ 已完成'
+      btn.classList.add('btn-finished')
+      summaryEl.className = 'run-summary ok'
+      summaryEl.textContent = '✓ 全部完成：成功 ' + success +
+        (skipped > 0 ? '，跳过 ' + skipped : '')
+    }
+    summaryEl.style.display = 'block'
+
     var msg = '完成！成功 ' + success
     if (failed > 0) msg += '，失败 ' + failed
     if (skipped > 0) msg += '，跳过 ' + skipped
