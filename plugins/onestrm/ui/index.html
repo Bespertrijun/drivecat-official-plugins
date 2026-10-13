@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OneStrm 自动工具</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header><h1>OneStrm 自动工具</h1><p>监控上传成功后，通知 OneStrm 扫描文件所在的云端目录。</p></header>
+  <form id="settings-form">
+    <section class="card">
+      <div class="card-head"><h2>连接与网盘</h2><label class="switch"><input id="enabled" type="checkbox">启用自动通知</label></div>
+      <div class="card-body">
+        <label for="drive-id">115 网盘</label><select id="drive-id"><option value="">请选择网盘</option></select>
+        <p class="hint">OneStrm 服务需要对应同一个 115 账号。目录沿用监控配置，自动取实际上传文件的父目录。</p>
+        <label for="base-url">OneStrm 服务地址</label><input id="base-url" type="url" placeholder="http://192.168.1.10:8080" autocomplete="off">
+        <p class="hint">填写 DriveCat 能访问的地址。Docker 中的 localhost 指向 DriveCat 容器。</p>
+        <label for="token">Token</label><input id="token" type="password" autocomplete="new-password" placeholder="留空保持已保存的 Token">
+        <label class="switch"><input id="clear-token" type="checkbox">清除已保存的 Token</label>
+        <details><summary>高级设置</summary>
+          <div class="grid">
+            <div><label for="auth-mode">鉴权方式</label><select id="auth-mode"><option value="bearer">Bearer Token</option><option value="query">URL query token</option></select></div>
+            <div><label for="timeout-seconds">请求超时（秒）</label><input id="timeout-seconds" type="number" min="1" max="60" value="10" required></div>
+            <div><label for="quiet-seconds">同目录合并等待（秒）</label><input id="quiet-seconds" type="number" min="1" max="60" value="10" required></div>
+          </div>
+          <p class="hint">持续上传时，每批最多合并等待 60 秒；网络异常最多自动重试 3 次。首次启用仅处理之后完成的上传。</p>
+        </details>
+      </div>
+    </section>
+    <div class="actions"><button id="test-connection" type="button">测试连接</button><button id="save" class="primary" type="submit">保存设置</button></div>
+  </form>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section class="card">
+    <div class="card-head"><h2>测试扫描</h2></div>
+    <div class="card-body">
+      <label for="scan-path">云端目录</label><input id="scan-path" placeholder="/影视/某剧" autocomplete="off">
+      <p class="hint">使用已保存的设置，实际向 OneStrm 提交一次扫描。通知成功只代表 HTTP 已接收；STRM 生成请在 OneStrm 确认。</p>
+      <button id="test-scan" type="button">提交测试扫描</button>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>通知记录</h2><button id="refresh" type="button">刷新</button></div>
+    <div class="card-body">
+      <p id="summary" role="status"></p><p id="diagnostic" role="status"></p>
+      <h3>待处理</h3><div id="queue"></div>
+      <p class="hint">取消只影响当前批次，后续上传或补查可能再次通知。关闭自动通知可暂停队列；已发出的请求需等待结果。</p>
+      <h3>已完成历史</h3><div id="history"></div>
+      <p class="hint">成功和取消历史保留 30 天，最多 10,000 条。清理历史不会删除未完成任务。</p>
+      <div class="actions"><button id="previous" type="button">上一页</button><span id="page"></span><button id="next" type="button">下一页</button><button id="clear-history" type="button">清理完成历史</button></div>
+    </div>
+  </section>
+</main>
+<script src="../_shared/sdk.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

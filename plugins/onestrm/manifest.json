@@ -1,0 +1,11 @@
+{
+  "name": "OneStrm 自动工具",
+  "author": "DriveCat",
+  "description": "所选 115 网盘监控上传成功后通知 OneStrm 扫描云端目录，支持目录合并、持久化队列与有限重试。",
+  "hooks": ["after_upload"],
+  "permissions": ["drive.config.list", "drive.upload", "fs.read", "fs.write", "db.read"],
+  "source": "official",
+  "source_url": "https://github.com/Bespertrijun/drivecat-official-plugins",
+  "entry": "main.OneStrmPlugin",
+  "ui": {"mode": "iframe", "entry": "ui/index.html", "hooks": []}
+}
