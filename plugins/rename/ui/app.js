@@ -538,6 +538,34 @@
 
   // ── Templates ──
 
+  var modalMode = 'save'  // 'save' | 'delete'
+  var modalTemplateName = ''
+
+  function openModal(mode, templateName) {
+    modalMode = mode
+    modalTemplateName = templateName || ''
+    var overlay = document.getElementById('modal-overlay')
+    var input = document.getElementById('modal-input')
+    var confirmBtn = document.getElementById('modal-confirm-btn')
+    if (mode === 'delete') {
+      document.getElementById('modal-title').textContent = '删除模板'
+      document.getElementById('modal-hint').textContent =
+        '确定要删除模板「' + modalTemplateName + '」吗？'
+      input.style.display = 'none'
+      confirmBtn.textContent = '删除'
+      confirmBtn.classList.add('btn-danger')
+    } else {
+      document.getElementById('modal-title').textContent = '保存模板'
+      document.getElementById('modal-hint').textContent = '请输入新模板的名称：'
+      input.style.display = ''
+      input.value = ''
+      confirmBtn.textContent = '保存'
+      confirmBtn.classList.remove('btn-danger')
+    }
+    overlay.style.display = 'flex'
+    if (mode === 'save') input.focus()
+  }
+
   function loadTemplates() {
     DriveCat.api('GET', '/rename/templates')
       .then(function (res) {
@@ -577,11 +605,17 @@
       DriveCat.toast('请先添加规则', 'warning')
       return
     }
-    var overlay = document.getElementById('modal-overlay')
-    var input = document.getElementById('modal-input')
-    input.value = ''
-    overlay.style.display = 'flex'
-    input.focus()
+    openModal('save')
+  }
+
+  function deleteTemplate() {
+    var sel = document.getElementById('template-select')
+    var idx = parseInt(sel.value)
+    if (isNaN(idx) || !state.templates[idx]) {
+      DriveCat.toast('请先选择一个模板', 'warning')
+      return
+    }
+    openModal('delete', state.templates[idx].name)
   }
 
   function closeModal() {
@@ -589,6 +623,19 @@
   }
 
   function confirmModal() {
+    if (modalMode === 'delete') {
+      var tplName = modalTemplateName
+      closeModal()
+      DriveCat.api('DELETE', '/rename/templates/' + encodeURIComponent(tplName))
+        .then(function () {
+          DriveCat.toast('模板已删除: ' + tplName, 'success')
+          loadTemplates()
+        }).catch(function () {
+          DriveCat.toast('删除失败', 'error')
+        })
+      return
+    }
+
     var name = document.getElementById('modal-input').value
     if (!name || !name.trim()) {
       DriveCat.toast('请输入模板名称', 'warning')
@@ -887,6 +934,7 @@
     clearSelection: clearSelection,
     loadTemplate: loadTemplate,
     saveTemplate: saveTemplate,
+    deleteTemplate: deleteTemplate,
     closeModal: closeModal,
     confirmModal: confirmModal,
     doExecute: doExecute,

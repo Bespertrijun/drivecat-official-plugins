@@ -197,6 +197,7 @@ select option {
 .btn:active { transform: scale(0.97); }
 .btn-secondary { background: var(--dc-bg-elevated); color: var(--dc-text-primary); border: 1px solid var(--dc-border); }
 .btn-secondary:hover { filter: brightness(0.96); }
+.btn-danger { background: var(--dc-error); color: #fff; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
 .btn-link { background: none; border: none; color: var(--dc-primary); cursor: pointer; font-size: 12px; }
 
