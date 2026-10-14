@@ -149,28 +149,21 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         await self.instance.dispatcher.run()
         self.assertEqual(self.calls[-1][1], {"paths": ["/电影"]})
 
-    async def test_real_readonly_database_keyset_pages_and_success_filter(self):
-        started = plugin.load_config(self.context.get_fs().root)["changed_at"]
-        completed = datetime.fromtimestamp(started + 1, timezone.utc)
-        with self.factory() as db:
-            db.add_all([UploadTask(id=i, watch_rule_id=1, drive_config_id=1, local_path="/gone",
-                                   remote_path=f"/影视/剧集/{i}.mkv", status="success", completed_at=completed)
-                        for i in range(2, 1103)])
-            db.commit()
-        self.add_task(2001, drive=2, completed=completed)
-        self.add_task(2002, status="skipped", completed=completed)
-        self.add_task(2003, status="failed", completed=completed)
-        dispatcher = self.instance.dispatcher
-        dispatcher.clock = lambda: started + 10
-        await dispatcher.run()
-        self.assertEqual(dispatcher.state.status()["rows"][0]["file_count"], 1000)
-        await dispatcher.run()
-        self.assertEqual(dispatcher.state.status()["rows"][0]["file_count"], 1101)
-        self.add_task(1, completed=datetime.fromtimestamp(started + 70, timezone.utc), path="/晚完成/late.mkv")
-        dispatcher.clock = lambda: started + 80
-        await dispatcher.run()
-        await dispatcher.run()
-        self.assertTrue(any(r["path"] == "/晚完成" and r["file_count"] == 1 for r in dispatcher.state.status()["rows"]))
+    async def test_real_readonly_database_and_success_filter(self):
+        self.add_task(1)
+        self.add_task(2, drive=2, path="/影视/其他/02.mkv")
+        self.add_task(3, status="skipped", path="/影视/跳过/03.mkv")
+        self.add_task(4, status="failed", path="/影视/失败/04.mkv")
+        await self.event(1, path="/影视/某剧/01.mkv")
+        await self.event(2, path="/影视/其他/02.mkv")
+        await self.event(3, path="/影视/跳过/03.mkv")
+        await self.event(4, path="/影视/失败/04.mkv")
+        await self.instance.dispatcher.run()
+        # Advance only plugin clock; scheduler storage and HTTP are real.
+        self.instance.dispatcher.clock = lambda: time.time() + 2
+        await self.instance.dispatcher.run()
+        self.assertEqual([c[1] for c in self.calls], [{"paths": ["/影视/某剧"]}])
+        self.assertEqual(self.instance.dispatcher.state.status()["pending_count"], 0)
         db = self.context.get_db()
         try:
             with self.assertRaises(PermissionError):

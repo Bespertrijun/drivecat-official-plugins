@@ -1,4 +1,4 @@
-"""Read host upload records, then dispatch the plugin's durable directory queue."""
+"""Verify hook-reported events against host upload records, then dispatch the durable directory queue."""
 
 import asyncio
 import time
@@ -30,22 +30,6 @@ class HostTasks:
         db = self.context.get_db()
         try:
             return {r.id: self.record(r) for r in db.query(UploadTask).filter(UploadTask.id.in_(ids)).all()}
-        finally:
-            db.close()
-
-    def page(self, drive_id, interval):
-        from app.models.watch import UploadTask
-        from sqlalchemy import and_, or_
-        db = self.context.get_db()
-        try:
-            cursor = datetime.fromtimestamp(interval["cursor_time"], timezone.utc).replace(tzinfo=None)
-            upper = datetime.fromtimestamp(interval["round_end"], timezone.utc).replace(tzinfo=None)
-            query = db.query(UploadTask).filter(
-                UploadTask.drive_config_id == drive_id, UploadTask.status == "success",
-                UploadTask.completed_at < upper,
-                or_(UploadTask.completed_at > cursor,
-                    and_(UploadTask.completed_at == cursor, UploadTask.id > interval["cursor_id"])))
-            return [self.record(r) for r in query.order_by(UploadTask.completed_at, UploadTask.id).limit(500).all()]
         finally:
             db.close()
 
@@ -91,15 +75,6 @@ class Dispatcher:
                     error = "事件与宿主记录的远程路径不一致，待核查"
                 results.append((clue, task, error))
             self.state.consume_clues(key, results, now, config["quiet_seconds"])
-        # Bounded work per tick; cursor and inserted tasks commit together.
-        for _ in range(2):
-            interval = self.state.begin_page(key, now)
-            if not interval:
-                break
-            rows = self.host.page(config["drive_id"], interval)
-            tasks = [checked_task(r, config["drive_id"], now) for r in rows]
-            cursor = (timestamp(rows[-1]["completed_at"]), rows[-1]["id"]) if rows else None
-            self.state.commit_page(interval, tasks, len(rows), cursor, now, config["quiet_seconds"])
 
     async def deliver(self, manual_id=None):
         if self.stopped:
@@ -122,7 +97,7 @@ class Dispatcher:
                 await asyncio.to_thread(self.prepare)
             except Exception:  # noqa: BLE001 - report a sanitized diagnostic at the host boundary
                 # Never expose raw DB errors, URLs, credentials or host row contents.
-                await asyncio.to_thread(self.state.diagnostic, "上传记录补查失败，请检查宿主兼容性或数据库状态")
+                await asyncio.to_thread(self.state.diagnostic, "上传事件核查失败，请检查宿主兼容性或数据库状态")
             # Already persisted work remains deliverable during a temporary host DB outage.
             try:
                 await self.deliver()

@@ -21,16 +21,13 @@ class State:
             if version not in (0, 1):
                 raise RuntimeError("不支持的 OneStrm 状态数据库版本")
             statements = [
+                # Reconciliation paging was removed; drop its progress table from existing installs.
+                "DROP TABLE IF EXISTS intervals",
                 "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
                 """CREATE TABLE IF NOT EXISTS targets (
                     key TEXT PRIMARY KEY, drive_id INTEGER NOT NULL, drive_name TEXT NOT NULL,
                     base_url TEXT NOT NULL, paused INTEGER NOT NULL DEFAULT 0,
                     retry_at REAL NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '')""",
-                """CREATE TABLE IF NOT EXISTS intervals (
-                    id INTEGER PRIMARY KEY, target TEXT NOT NULL REFERENCES targets(key),
-                    started REAL NOT NULL, ended REAL, watermark REAL NOT NULL,
-                    round_end REAL, cursor_time REAL, cursor_id INTEGER NOT NULL DEFAULT 0,
-                    next_check REAL NOT NULL DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS inbox (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL REFERENCES targets(key),
                     task_id INTEGER, remote_path TEXT NOT NULL, received REAL NOT NULL,
@@ -99,13 +96,8 @@ class State:
                 db.execute("UPDATE targets SET paused=0,error='' WHERE key=?", (key,))
                 db.execute("""UPDATE batches SET status='waiting',attempts=0,due=?,error=''
                     WHERE target=? AND status='auth'""", (now, key))
-        active = key if config["enabled"] else ""
-        if previous.get("active", "") != active:
-            db.execute("UPDATE intervals SET ended=? WHERE ended IS NULL", (now,))
-            if active:
-                db.execute("INSERT INTO intervals(target,started,watermark) VALUES (?,?,?)", (active, now, now))
         # Credentials stay exclusively in config.json, never in queue/history.
-        self.set_meta(db, "config", {"revision": config["revision"], "active": active,
+        self.set_meta(db, "config", {"revision": config["revision"],
                                      "auth_revision": config["auth_revision"]})
 
     def current(self, db):
@@ -134,11 +126,6 @@ class State:
                 "SELECT * FROM inbox WHERE target=? AND error='' ORDER BY id LIMIT 500", (key,))]
 
     @staticmethod
-    def eligible(db, key, completed):
-        return db.execute("""SELECT 1 FROM intervals WHERE target=? AND started<=?
-            AND (ended IS NULL OR ended>?) LIMIT 1""", (key, completed, completed)).fetchone() is not None
-
-    @staticmethod
     def enqueue(db, key, task_id, path, now, quiet):
         # Deduplication is confined to unfinished batches. A successful batch deletes its members.
         if task_id is not None and db.execute("""SELECT 1 FROM members m JOIN batches b ON b.id=m.batch_id
@@ -148,7 +135,7 @@ class State:
             AND manual=0 ORDER BY id LIMIT 1""", (key, path)).fetchone() if task_id is not None else None
         if row:
             batch_id = row["id"]
-            # Reconciliation never resets a retry budget, failure or Retry-After.
+            # Merging another event never resets a retry budget, failure or Retry-After.
             due = min(now + quiet, row["first_at"] + 60) if row["status"] == "waiting" else row["due"]
             db.execute("UPDATE batches SET last_at=?,updated=?,due=? WHERE id=?", (now, now, due, batch_id))
         else:
@@ -168,50 +155,9 @@ class State:
                 if error:
                     db.execute("UPDATE inbox SET error=? WHERE id=?", (error, clue["id"]))
                 else:
-                    if task and self.eligible(db, key, task["completed_at"]):
+                    if task:
                         self.enqueue(db, key, task["id"], task["path"], now, quiet)
                     db.execute("DELETE FROM inbox WHERE id=?", (clue["id"],))
-
-    def begin_page(self, key, now):
-        with self.connect(write=True) as db:
-            self.current(db)
-            row = db.execute("""SELECT * FROM intervals WHERE target=? AND next_check<=?
-                AND (ended IS NULL OR watermark<ended) ORDER BY id LIMIT 1""", (key, now)).fetchone()
-            if not row:
-                return None
-            row = dict(row)
-            if row["round_end"] is None:
-                upper = min(now - 5, row["ended"]) if row["ended"] is not None else now - 5
-                if upper < row["watermark"]:
-                    if now < row["watermark"]:
-                        self.set_meta(db, "error", "完成时间水位晚于当前时间；等待时间恢复后再补查")
-                    return None
-                if upper <= row["started"]:
-                    return None
-                row.update(round_end=upper, cursor_time=max(row["started"], row["watermark"] - 120), cursor_id=0)
-                db.execute("UPDATE intervals SET round_end=?,cursor_time=?,cursor_id=0 WHERE id=?",
-                           (upper, row["cursor_time"], row["id"]))
-            return row
-
-    def commit_page(self, interval, tasks, count, cursor, now, quiet):
-        with self.connect(write=True) as db:
-            self.current(db)
-            current = db.execute("SELECT * FROM intervals WHERE id=?", (interval["id"],)).fetchone()
-            if not current or any(current[k] != interval[k] for k in ("round_end", "cursor_time", "cursor_id")):
-                return  # Another invocation already committed this page.
-            for task, error in tasks:
-                if not self.eligible(db, interval["target"], task["completed_at"]):
-                    continue
-                if error:
-                    db.execute("""INSERT OR IGNORE INTO inbox(target,task_id,remote_path,received,error)
-                        VALUES (?,?,?,?,?)""", (interval["target"], task["id"], task.get("remote_path") or "", now, error))
-                else:
-                    self.enqueue(db, interval["target"], task["id"], task["path"], now, quiet)
-            if count < 500:
-                db.execute("""UPDATE intervals SET watermark=round_end,round_end=NULL,cursor_time=NULL,
-                    cursor_id=0,next_check=? WHERE id=?""", (now + 60, interval["id"]))
-            else:
-                db.execute("UPDATE intervals SET cursor_time=?,cursor_id=? WHERE id=?", (*cursor, interval["id"]))
 
     def claim(self, now, manual_id=None):
         with self.connect(write=True) as db:

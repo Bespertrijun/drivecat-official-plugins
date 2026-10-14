@@ -25,7 +25,7 @@ from onestrm_config import (
     target_key,
     write_config,
 )
-from onestrm_dispatcher import Dispatcher, timestamp
+from onestrm_dispatcher import Dispatcher
 from onestrm_state import State
 
 
@@ -45,12 +45,6 @@ class FakeHost:
 
     def by_ids(self, ids):
         return {i: self.rows[i] for i in ids if i in self.rows}
-
-    def page(self, drive_id, interval):
-        rows = [r for r in self.rows.values() if r["drive_config_id"] == drive_id and r["status"] == "success"
-                and timestamp(r["completed_at"]) < interval["round_end"]
-                and (timestamp(r["completed_at"]), r["id"]) > (interval["cursor_time"], interval["cursor_id"])]
-        return sorted(rows, key=lambda r: (r["completed_at"], r["id"]))[:500]
 
 
 class Fixture:
@@ -198,28 +192,21 @@ class StateTests(Fixture, unittest.TestCase):
         self.enqueue(1, now=1003)
         self.assertIsNotNone(self.state.claim(1013))
 
-    def test_crash_between_config_rename_and_state_commit_recovers_enable_interval(self):
+    def test_capture_ignores_events_while_disabled(self):
+        self.settings(1002, enabled=False)
+        self.state.capture({"upload_task_id": 1, "drive_config_id": 1, "remote_path": "/影视/某剧/01.mkv"}, now=1003)
+        self.assertEqual(self.state.clues(self.key), [])
+
+    def test_crash_between_config_rename_and_state_commit_recovers_settings(self):
         updated = {**self.config, "enabled": False, "changed_at": 1003, "revision": 2}
         write_config(self.temp.name, updated)
         # No sync_config call: simulate the process dying immediately after the atomic rename.
         resumed = State(self.temp.name)
         self.assertFalse(resumed.status()["enabled"])
-        with resumed.connect() as db:
-            self.assertTrue(resumed.eligible(db, self.key, 1002))
-            self.assertFalse(resumed.eligible(db, self.key, 1004))
 
-    def test_clock_rollback_keeps_reconciliation_watermark(self):
-        with self.state.connect(write=True) as db:
-            db.execute("UPDATE intervals SET watermark=1100")
-        self.assertIsNone(self.state.begin_page(self.key, 1050))
-        self.assertIn("时间", self.state.status()["error"])
-        with self.state.connect() as db:
-            self.assertEqual(db.execute("SELECT watermark FROM intervals").fetchone()[0], 1100)
-
-    def test_retention_and_clear_preserve_unfinished_and_watermark(self):
+    def test_retention_and_clear_preserve_unfinished(self):
         self.enqueue()
         with self.state.connect(write=True) as db:
-            db.execute("UPDATE intervals SET watermark=1234")
             sql = "INSERT INTO history(target,path,status,file_count,attempts,updated,error) VALUES (?,'/a','success',1,1,?,'')"
             db.execute(sql, (self.key, 1))
             db.executemany(sql, [(self.key, 4_000_000 + i) for i in range(10002)])
@@ -228,8 +215,7 @@ class StateTests(Fixture, unittest.TestCase):
         self.assertEqual(self.state.status()["pending_count"], 1)
         self.state.clear_history()
         self.assertEqual(self.state.status()["history_count"], 0)
-        with self.state.connect() as db:
-            self.assertEqual(db.execute("SELECT watermark FROM intervals").fetchone()[0], 1234)
+        self.assertEqual(self.state.status()["pending_count"], 1)
 
 
 class DispatcherTests(Fixture, unittest.IsolatedAsyncioTestCase):
@@ -245,73 +231,57 @@ class DispatcherTests(Fixture, unittest.IsolatedAsyncioTestCase):
 
         self.dispatcher = Dispatcher(self.state, self.host, sender, clock=lambda: self.now)
 
-    async def test_missing_hook_recovery_and_other_accounts_failures_skips(self):
-        rows = [task(1), task(2, drive=2), task(3, status="failed"), task(4, status="skipped"),
-                task(5, completed=999), task(6, path="/电影/a.mkv")]
+    async def test_clue_delivery_filters_other_accounts_failures_and_skips(self):
+        rows = [task(1), task(2, drive=2, path="/其他/b.mkv"), task(3, status="failed", path="/失败/c.mkv"),
+                task(4, status="skipped", path="/跳过/d.mkv"), task(6, path="/电影/a.mkv")]
         self.host.rows = {r["id"]: r for r in rows}
+        for row in rows:
+            self.state.capture({"upload_task_id": row["id"], "drive_config_id": 1,
+                                "remote_path": row["remote_path"]}, now=1002)
         await self.dispatcher.run()
         self.now = 1020
         await self.dispatcher.run()
         await self.dispatcher.run()
         self.assertEqual(sorted(self.sent), [(1, "/影视/某剧"), (1, "/电影")])
+        self.assertEqual(self.state.status()["pending_count"], 0)
 
-    async def test_equal_completion_time_pagination_restart_and_late_small_id(self):
-        self.host.rows = {i: task(i) for i in range(2, 1202)}
-        await self.dispatcher.run()  # Two pages only.
-        self.assertEqual(self.state.status()["rows"][0]["file_count"], 1000)
-        resumed = Dispatcher(State(self.temp.name), self.host, self.dispatcher.sender, clock=lambda: self.now)
-        await resumed.run()
-        self.assertEqual(self.state.status()["rows"][0]["file_count"], 1200)
-        self.host.rows[1] = task(1, completed=1070, path="/晚完成/late.mkv")
-        self.now = 1080
-        await resumed.run()
-        await resumed.run()  # Finish the bounded overlap pages before the later completion.
-        self.assertTrue(any(r["path"] == "/晚完成" and r["file_count"] == 1 for r in self.state.status()["rows"]))
+    async def test_completed_task_is_never_notified_twice(self):
+        self.host.rows = {1: task(1)}
+        self.state.capture({"upload_task_id": 1, "drive_config_id": 1, "remote_path": "/影视/某剧/01.mkv"}, now=1002)
+        await self.dispatcher.run()
+        self.now = 1020
+        await self.dispatcher.run()
+        self.assertEqual(self.sent, [(1, "/影视/某剧")])
+        # Ingestion is hook-only; later ticks never revisit the completed upload.
+        for now in (1200, 1300, 1400):
+            self.now = now
+            await self.dispatcher.run()
+        self.assertEqual(len(self.sent), 1)
 
-    async def test_hook_verification_missing_records_and_invalid_path(self):
-        self.host.rows = {1: task(1, path=""), 2: task(2, status="failed"), 3: task(3, drive=2)}
-        for i in [1, 2, 3, 4]:
+    async def test_hook_verification_missing_records_invalid_path_and_future_time(self):
+        self.host.rows = {1: task(1, path=""), 2: task(2, status="failed"), 3: task(3, drive=2),
+                          5: task(5, completed=9999)}
+        for i in [1, 2, 3, 4, 5]:
             self.state.capture({"upload_task_id": i, "drive_config_id": 1, "remote_path": ""}, now=1002)
         await self.dispatcher.run()
         rows = self.state.status()["rows"]
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         self.assertTrue(all(r["error"] and r["kind"] == "inbox" for r in rows))
         self.assertEqual(self.sent, [])
 
-    async def test_enable_intervals_exclude_manually_disabled_period(self):
-        self.settings(1003, enabled=False)
-        self.settings(1006, enabled=True)
-        self.host.rows = {1: task(1, completed=1002), 2: task(2, completed=1004), 3: task(3, completed=1007)}
-        self.now = 1020
-        await self.dispatcher.run()
-        await self.dispatcher.run()
-        self.assertEqual(self.state.status()["rows"][0]["file_count"], 2)
-
-    async def test_page_transaction_rolls_back_on_insert_failure(self):
+    async def test_clue_consume_rolls_back_on_insert_failure(self):
         self.host.rows = {1: task(1)}
+        self.state.capture({"upload_task_id": 1, "drive_config_id": 1, "remote_path": "/影视/某剧/01.mkv"}, now=1002)
         with patch.object(self.state, "enqueue", side_effect=RuntimeError("disk failure")):
             await self.dispatcher.run()
-        with self.state.connect() as db:
-            interval = dict(db.execute("SELECT * FROM intervals").fetchone())
-            self.assertEqual(interval["watermark"], 1000)
-            self.assertEqual(interval["cursor_id"], 0)
-        await self.dispatcher.run()
-        self.assertEqual(self.state.status()["rows"][0]["file_count"], 1)
-
-    async def test_old_history_is_not_replayed_after_clear(self):
-        self.host.rows = {1: task(1)}
-        await self.dispatcher.run()
+        self.assertEqual(len(self.state.clues(self.key)), 1)
+        self.assertTrue(self.state.status()["error"])
         self.now = 1020
         await self.dispatcher.run()
-        self.now = 1200
-        await self.dispatcher.run()  # Expected overlap can repeat once.
-        self.now = 1210
+        self.assertFalse(self.state.status()["error"])
+        self.now = 1030
         await self.dispatcher.run()
-        self.state.clear_history()
-        self.now = 1400
-        await self.dispatcher.run()
-        self.assertEqual(self.state.status()["pending_count"], 0)
-        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.sent, [(1, "/影视/某剧")])
 
     async def test_unload_drains_request_and_stops_new_claims(self):
         started, finish = asyncio.Event(), asyncio.Event()

@@ -43,8 +43,8 @@ def after_upload(directory, ctx):
         if ctx.hook_name == "after_upload":
             State(directory).capture(ctx.data)
     except Exception:  # noqa: BLE001 - isolate plugin failures from the completed upload
-        # Upload success is already committed. Periodic read-only reconciliation repairs a missed hook.
-        logging.getLogger(__name__).warning("OneStrm 事件交接失败，将由成功任务补查尝试恢复")
+        # Upload success is already committed; a failed handoff drops the event, it is not backfilled.
+        logging.getLogger(__name__).warning("OneStrm 事件交接失败，本次上传事件不会通知")
 
 
 async def scheduled_poll():
