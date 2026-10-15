@@ -2,6 +2,8 @@
 官方重命名插件入口。
 
 API 端点：
+  GET  /rename/drives       — 列出已启用网盘（独立入口 Step 1 用）
+  GET  /rename/files        — 列出指定网盘目录下的文件
   POST /rename/preview      — 预览重命名结果
   POST /rename/execute      — 执行重命名（SSE 流式进度）
   GET  /rename/templates    — 获取已存模板列表
@@ -93,6 +95,23 @@ class RenamePlugin(PluginInterface):
         # ── 注册路由 ──
 
         router = APIRouter()
+
+        # --- 网盘/文件浏览（独立入口 Step 1；前端不直连宿主核心 API） ---
+        @router.get("/drives")
+        async def list_drives():
+            """列出已启用的网盘配置（脱敏摘要）。"""
+            drives = await asyncio.to_thread(context.list_drives)
+            return {"drives": [d for d in drives if d.get("is_active")]}
+
+        @router.get("/files")
+        async def list_files(drive_config_id: int, parent_id: str = "0"):
+            """列出指定网盘目录下的文件。"""
+            drive = await context.get_drive(drive_config_id)
+            files = await drive.list_files(parent_id)
+            return {"files": [
+                {"id": f.id, "name": f.name, "is_dir": f.is_dir, "size": f.size}
+                for f in files
+            ]}
 
         # --- 预览 ---
         @router.post("/preview")

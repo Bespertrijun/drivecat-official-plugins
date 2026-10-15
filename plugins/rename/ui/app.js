@@ -140,7 +140,8 @@
   // ══════════════════════════════════
 
   function loadDrives() {
-    fetchCore('/api/drives/').then(function (drives) {
+    DriveCat.api('GET', '/rename/drives').then(function (res) {
+      var drives = res.drives || []
       var sel = document.getElementById('drive-select')
       sel.innerHTML = '<option value="">— 请选择网盘 —</option>'
       drives.forEach(function (d) {
@@ -161,20 +162,26 @@
         updateSelectionInfo()
       }
       if (state.driveId) browseFiles()
+    }).catch(function () {
+      document.getElementById('drive-select').innerHTML =
+        '<option value="">— 网盘列表加载失败 —</option>'
+      DriveCat.toast('网盘列表加载失败', 'error')
     })
   }
 
   function browseFiles() {
     if (!state.driveId) return
-    var url = '/api/drives/' + state.driveId + '/files?parent_id=' + encodeURIComponent(state.parentId)
-    fetchCore(url).then(function (data) {
-      state.files = data.files || data || []
-      renderFileList(state.files)
-      renderBreadcrumb()
-      resizePanel()
-    }).catch(function () {
-      renderFileList([])
-    })
+    DriveCat.api('GET', '/rename/files?drive_config_id=' + state.driveId +
+      '&parent_id=' + encodeURIComponent(state.parentId))
+      .then(function (data) {
+        state.files = data.files || []
+        renderFileList(state.files)
+        renderBreadcrumb()
+        resizePanel()
+      }).catch(function () {
+        renderFileList([])
+        DriveCat.toast('文件列表加载失败', 'error')
+      })
   }
 
   function renderFileList(files) {
@@ -893,16 +900,6 @@
       body.file_ids = state.selectedFileIds
     }
     return body
-  }
-
-  /** 调用 DriveCat 核心 API（不走插件前缀） */
-  function fetchCore(path) {
-    return fetch(API_BASE + path, {
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _token },
-    }).then(function (r) {
-      if (!r.ok) throw new Error('API ' + r.status)
-      return r.json()
-    })
   }
 
   function formatSize(bytes) {
