@@ -882,8 +882,14 @@
         }
         params[k] = v
       }
+      if ((r.type === 'replace' || r.type === 'regex') &&
+          (params.replacement === undefined || params.replacement === null)) {
+        params.replacement = ''
+      }
       return { type: r.type, params: params }
     }).filter(function (r) {
+      if (r.type === 'insert' && !r.params.text) return false
+      if ((r.type === 'replace' || r.type === 'regex') && !r.params.pattern) return false
       var hasVal = false
       for (var k in r.params) if (r.params[k] !== '') hasVal = true
       return hasVal || r.type === 'case' || r.type === 'sequence'

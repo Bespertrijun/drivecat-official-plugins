@@ -137,6 +137,26 @@ test('digit-only regex replacement stays a string (backend re.sub would 500 on i
   }
 })
 
+test('incomplete template rules are normalized before preview', async () => {
+  const ui = openPlugin(
+    { drive_id: 7, parent_id: 'root', selected_file: { id: 'folder', is_dir: true } },
+    { templates: [{ name: 'incomplete', rules: [
+      { type: 'insert', params: { position: 0 } },
+      { type: 'replace', params: { pattern: 'x' } },
+      { type: 'regex', params: { pattern: 'y' } },
+    ] }] },
+  )
+  await new Promise(r => setImmediate(r))
+  ui.element('template-select').value = '0'
+  ui.app.loadTemplate()
+  ui.runPreview()
+  const body = JSON.parse(JSON.stringify(ui.requests.find(r => r.path === '/rename/preview').body))
+  assert.deepEqual(body.rules, [
+    { type: 'replace', params: { pattern: 'x', replacement: '' } },
+    { type: 'regex', params: { pattern: 'y', replacement: '' } },
+  ])
+})
+
 
 test('execute shows elapsed time and rate from the done event', async () => {
   const ui = openPlugin(
