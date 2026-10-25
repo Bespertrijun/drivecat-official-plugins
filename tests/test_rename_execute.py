@@ -110,12 +110,21 @@ def test_empty_plan_stream_still_reports_done():
     assert done['rate'] == 0
 
 
-def test_sequence_rule_supports_middle_insertion():
+def test_sequence_rule_inserts_at_position_without_separator():
+    drive = FakeDrive(1)
+    drive._files[0].name = '金庸武侠世界.S04E09.2160p[tmdbid=235351].mkv'
+    rule = RuleSpec(type='sequence', params={'position': 4, 'padding': 2})
+    previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
+    assert previews[0].new_name == '金庸武侠01世界.S04E09.2160p[tmdbid=235351].mkv'
+
+
+def test_sequence_rule_has_no_separator_at_start_or_end():
     drive = FakeDrive(1)
     drive._files[0].name = 'abcdef.mkv'
-    rule = RuleSpec(type='sequence', params={'position': 3, 'padding': 3})
-    previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
-    assert previews[0].new_name == 'abc_001_def.mkv'
+    for position, expected in ((0, '001abcdef.mkv'), (-1, 'abcdef001.mkv')):
+        rule = RuleSpec(type='sequence', params={'position': position})
+        previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
+        assert previews[0].new_name == expected
 
 
 def test_pad_rule_can_target_one_number():

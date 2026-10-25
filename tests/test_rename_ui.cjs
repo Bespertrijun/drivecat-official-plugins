@@ -4,6 +4,25 @@ const { join } = require('node:path')
 const { test } = require('node:test')
 const vm = require('node:vm')
 
+function parseRuleInputs(html) {
+  const inputs = []
+  for (const match of html.matchAll(/<input\b[^>]*>/g)) {
+    const attrs = {}
+    const listeners = {}
+    for (const attr of match[0].matchAll(/([\w-]+)="([^"]*)"/g)) attrs[attr[1]] = attr[2]
+    inputs.push({
+      value: attrs.value || '',
+      getAttribute(name) { return attrs[name] },
+      addEventListener(event, callback) { listeners[event] = callback },
+      setValue(value) {
+        this.value = String(value)
+        if (listeners.input) listeners.input()
+      },
+    })
+  }
+  return inputs
+}
+
 function openPlugin(context, opts = {}) {
   const elements = new Map()
   function element(id) {
@@ -17,7 +36,18 @@ function openPlugin(context, opts = {}) {
           add(name) { classes.add(name) },
           remove(name) { classes.delete(name) },
         },
-        addEventListener() {}, querySelectorAll() { return [] }, appendChild() {},
+        addEventListener() {},
+        querySelectorAll(selector) {
+          if (id === 'rules-list' && selector === 'input, select') {
+            if (this._inputsHtml !== this.innerHTML) {
+              this._inputsHtml = this.innerHTML
+              this._inputs = parseRuleInputs(this.innerHTML)
+            }
+            return this._inputs
+          }
+          return []
+        },
+        appendChild() {},
       })
     }
     return elements.get(id)
@@ -167,6 +197,24 @@ test('incomplete template rules are normalized before preview', async () => {
   assert.deepEqual(body.rules, [
     { type: 'replace', params: { pattern: 'x', replacement: '' } },
     { type: 'regex', params: { pattern: 'y', replacement: '' } },
+  ])
+})
+
+
+test('sequence position entered in the UI reaches the preview request', () => {
+  const ui = openPlugin(
+    { drive_id: 7, parent_id: 'root', selected_file: { id: 'folder', is_dir: true } },
+  )
+  ui.element('new-rule-type').value = 'sequence'
+  ui.app.addRule()
+  const fields = ui.element('rules-list').querySelectorAll('input, select')
+  for (const [key, value] of [['start_num', '1'], ['step', '1'], ['padding', '2'], ['position', '4']]) {
+    fields.find(field => field.getAttribute('data-key') === key).setValue(value)
+  }
+  ui.runPreview()
+  const body = JSON.parse(JSON.stringify(ui.requests.find(r => r.path === '/rename/preview').body))
+  assert.deepEqual(body.rules, [
+    { type: 'sequence', params: { start_num: 1, step: 1, padding: 2, position: 4 } },
   ])
 })
 

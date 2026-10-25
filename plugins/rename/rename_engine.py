@@ -146,7 +146,7 @@ class SequenceRule(RenameRule):
         step: int = 1,
         padding: int = 3,
         position: int = -1,
-        separator: str = "_",
+        separator: str = "",
     ):
         self.start_num = start_num
         self.step = step
