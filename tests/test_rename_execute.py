@@ -110,6 +110,30 @@ def test_empty_plan_stream_still_reports_done():
     assert done['rate'] == 0
 
 
+def test_sequence_rule_supports_middle_insertion():
+    drive = FakeDrive(1)
+    drive._files[0].name = 'abcdef.mkv'
+    rule = RuleSpec(type='sequence', params={'position': 3, 'padding': 3})
+    previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
+    assert previews[0].new_name == 'abc_001_def.mkv'
+
+
+def test_pad_rule_can_target_one_number():
+    drive = FakeDrive(1)
+    drive._files[0].name = '2024.Show.E1.1080p.mkv'
+    rule = RuleSpec(type='pad', params={'target_digits': 3, 'index': 1})
+    previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
+    assert previews[0].new_name == '2024.Show.E001.1080p.mkv'
+
+
+def test_pad_rule_defaults_to_all_numbers():
+    drive = FakeDrive(1)
+    drive._files[0].name = 'S1.E2.mkv'
+    rule = RuleSpec(type='pad', params={'target_digits': 2})
+    previews = asyncio.run(RenameManager.preview(drive, '0', [rule]))
+    assert previews[0].new_name == 'S01.E02.mkv'
+
+
 def test_execute_non_stream_checks_return_and_counts():
     drive = FakeDrive(3, {'id2': (0, False)})
     result = asyncio.run(RenameManager.execute(

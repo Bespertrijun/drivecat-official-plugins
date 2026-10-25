@@ -29,7 +29,20 @@ function openPlugin(context, opts = {}) {
     window: { location: { origin: 'http://localhost' }, addEventListener() {} },
     document: {
       getElementById: element,
-      createElement() { return element('temporary') },
+      createElement() {
+        let text = ''
+        let html = ''
+        return {
+          value: '',
+          get textContent() { return text },
+          set textContent(value) {
+            text = String(value)
+            html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          },
+          get innerHTML() { return html },
+          set innerHTML(value) { html = String(value) },
+        }
+      },
       querySelectorAll(selector) {
         return selector === '.step-panel' ? [1, 2, 3].map(n => element('step-' + n)) : []
       },
@@ -154,6 +167,44 @@ test('incomplete template rules are normalized before preview', async () => {
   assert.deepEqual(body.rules, [
     { type: 'replace', params: { pattern: 'x', replacement: '' } },
     { type: 'regex', params: { pattern: 'y', replacement: '' } },
+  ])
+})
+
+
+test('sequence rule exposes position and submits it as a number', async () => {
+  const ui = openPlugin(
+    { drive_id: 7, parent_id: 'root', selected_file: { id: 'folder', is_dir: true } },
+    { templates: [{ name: 'middle', rules: [
+      { type: 'sequence', params: { start_num: '1', step: '1', padding: '3', position: '3' } },
+    ] }] },
+  )
+  await new Promise(r => setImmediate(r))
+  ui.element('template-select').value = '0'
+  ui.app.loadTemplate()
+  assert.match(ui.element('rules-list').innerHTML, /data-key="position"/)
+  ui.runPreview()
+  const body = JSON.parse(JSON.stringify(ui.requests.find(r => r.path === '/rename/preview').body))
+  assert.deepEqual(body.rules, [
+    { type: 'sequence', params: { start_num: 1, step: 1, padding: 3, position: 3 } },
+  ])
+})
+
+
+test('pad rule exposes number index and submits it as a number', async () => {
+  const ui = openPlugin(
+    { drive_id: 7, parent_id: 'root', selected_file: { id: 'folder', is_dir: true } },
+    { templates: [{ name: 'episode', rules: [
+      { type: 'pad', params: { target_digits: '3', index: 0 } },
+    ] }] },
+  )
+  await new Promise(r => setImmediate(r))
+  ui.element('template-select').value = '0'
+  ui.app.loadTemplate()
+  assert.match(ui.element('rules-list').innerHTML, /value="0"[^>]*data-key="index"/)
+  ui.runPreview()
+  const body = JSON.parse(JSON.stringify(ui.requests.find(r => r.path === '/rename/preview').body))
+  assert.deepEqual(body.rules, [
+    { type: 'pad', params: { target_digits: 3, index: 0 } },
   ])
 })
 

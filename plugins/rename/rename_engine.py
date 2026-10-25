@@ -161,8 +161,15 @@ class SequenceRule(RenameRule):
 
         if self.position == 0:
             return seq + self.separator + filename
-        else:
+        if self.position < 0 or self.position >= len(filename):
             return filename + self.separator + seq
+        return (
+            filename[: self.position]
+            + self.separator
+            + seq
+            + self.separator
+            + filename[self.position :]
+        )
 
     def describe(self) -> str:
         return f"添加序号（从 {self.start_num} 开始，步长 {self.step}）"
@@ -171,15 +178,33 @@ class SequenceRule(RenameRule):
 class PadRule(RenameRule):
     """数字填充/补齐。"""
 
-    def __init__(self, target_digits: int = 3, pad_char: str = "0"):
+    def __init__(
+        self,
+        target_digits: int = 3,
+        pad_char: str = "0",
+        index: Optional[int] = None,
+    ):
         self.target_digits = target_digits
         self.pad_char = pad_char
+        self.index = None if index in (None, "") else int(index)
 
     def apply(self, filename: str, **kwargs) -> str:
         def pad_match(m: re.Match) -> str:
             return m.group().zfill(self.target_digits)
 
-        return re.sub(r"\d+", pad_match, filename)
+        if self.index is None:
+            return re.sub(r"\d+", pad_match, filename)
+
+        matches = list(re.finditer(r"\d+", filename))
+        try:
+            match = matches[self.index]
+        except IndexError:
+            return filename
+        return (
+            filename[: match.start()]
+            + pad_match(match)
+            + filename[match.end() :]
+        )
 
     def describe(self) -> str:
         return f"数字补齐到 {self.target_digits} 位"

@@ -317,13 +317,15 @@
       fields: [
         { key: 'start_num', label: '起始', type: 'number', placeholder: '1' },
         { key: 'step', label: '步长', type: 'number', placeholder: '1' },
-        { key: 'padding', label: '补零位数', type: 'number', placeholder: '3' }
+        { key: 'padding', label: '补零位数', type: 'number', placeholder: '3' },
+        { key: 'position', label: '位置', placeholder: '0=开头 -1=末尾 正数=中间', type: 'number' }
       ]
     },
     pad: {
       label: '数字补零',
       fields: [
-        { key: 'target_digits', label: '目标位数', type: 'number', placeholder: '3' }
+        { key: 'target_digits', label: '目标位数', type: 'number', placeholder: '3' },
+        { key: 'index', label: '数字位置', type: 'number', placeholder: '留空=全部 0=首段 -1=末段' }
       ]
     },
     case: {
@@ -400,7 +402,8 @@
       // 字段区包一层 grid 容器，折叠/展开时做行高过渡
       html += '<div class="rule-body"><div class="rule-body-inner">'
       config.fields.forEach(function (f) {
-        var val = rule.params[f.key] || ''
+        var val = rule.params[f.key]
+        if (val === undefined || val === null) val = ''
         html += '<div class="rule-field">'
         html += '<label>' + f.label + '</label>'
         if (f.options) {
