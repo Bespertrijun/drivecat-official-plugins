@@ -109,6 +109,60 @@ def _drive_pair(data: Dict[str, Any]) -> Optional[str]:
     return f"{src if src is not None else '?'} → {dst if dst is not None else '?'}"
 
 
+def _actual_drives(data: Dict[str, Any], limit: int = 3) -> Optional[str]:
+    """均衡组本批实际写入的网盘：最多列 limit 个，超出时附「等 N 个」。"""
+    names = data.get("target_drive_names")
+    if not isinstance(names, (list, tuple)):
+        return None
+    names = [_short(str(n), 24) for n in names if n not in (None, "")]
+    if not names:
+        return None
+    text = "、".join(names[:limit])
+    if len(names) > limit:
+        text += f" 等 {len(names)} 个"
+    return text
+
+
+def _batch_drive_pair(data: Dict[str, Any], kind: str) -> Optional[str]:
+    """批次 / 同步轮次的「源 → 目标」网盘。
+
+    - target_type == "balance_group"：一律显示均衡组（有规则名时带名字），忽略
+      target_drive_*——规则从单盘改成均衡组后可能残留旧网盘的 id / 名称；
+    - 否则有目标网盘就显示目标网盘；没有时有均衡规则名则显示均衡组；
+    - 旧宿主不带 target_type 键：同步轮次没有目标网盘即视为均衡组；
+      显式 target_type == "drive" 却没有目标网盘时显示 "?"。
+    目标是均衡组且有 target_drive_names 时附上本批实际写入的网盘。
+    """
+    src = _pick(data, "source_drive_name", "source_drive_id")
+    dst = _pick(data, "target_drive_name", "target_drive_id")
+    group_name = _pick(data, "balance_rule_name")
+    group_label = f"均衡组「{_short(str(group_name), 30)}」" if group_name is not None else "均衡组"
+    is_group = False
+
+    if data.get("target_type") == "balance_group":
+        dst = group_label
+        is_group = True
+    elif dst is not None:
+        dst = str(dst)
+    elif group_name is not None:
+        dst = group_label
+        is_group = True
+    elif "target_type" not in data and kind == "sync_run" and src is not None:
+        dst = group_label
+        is_group = True
+    elif src is None:
+        return None
+    else:
+        dst = "?"
+
+    pair = f"{src if src is not None else '?'} → {dst}"
+    if is_group:
+        actual = _actual_drives(data)
+        if actual:
+            pair += f"（实际写入：{actual}）"
+    return pair
+
+
 def _format_transfer(data: Dict[str, Any], failed: bool = False) -> Message:
     """单个文件转存：after_transfer（成功）/ on_error source=transfer（失败）。
 
@@ -151,22 +205,56 @@ _BATCH_TITLES = {
 }
 
 
+def _deferred_reasons(data: Dict[str, Any]) -> set:
+    """deferred_reasons 归一化为字符串集合；缺失 / 格式不对时为空集（旧宿主）。"""
+    reasons = data.get("deferred_reasons")
+    if not isinstance(reasons, (list, tuple, set)):
+        return set()
+    return {r for r in reasons if isinstance(r, str)}
+
+
+def _deferred_suffix(data: Dict[str, Any]) -> str:
+    """有文件顺延时的标题后缀：按 deferred_reasons 说明触发了哪个本轮上限。"""
+    reasons = _deferred_reasons(data)
+    by_bytes = "bytes" in reasons
+    by_deadline = "deadline" in reasons
+    if by_bytes and by_deadline:
+        return " · 已达流量 / 时长上限"
+    if by_bytes:
+        return " · 已达流量上限"
+    if by_deadline:
+        return " · 已达时长上限"
+    # 旧宿主不带原因（或原因未知）：只说到了本轮上限
+    return " · 已达本轮上限"
+
+
 def _format_batch(data: Dict[str, Any], failed: bool = False, kind: Optional[str] = None) -> Message:
     """整批 / 整轮汇总：after_folder_transfer、after_sync（全部成功）/ on_error
     source=folder_transfer、sync_run（有文件失败，或同步中途出错 aborted）。
 
     kind 由调用方按钩子 / source 给出；缺省时看 data["kind"]。
+
+    - 目标是均衡组（无单一目标网盘）时网盘行显示「均衡组「规则名」」及实际写入的网盘；
+    - 触达本轮流量 / 时长上限时，剩余文件以 deferred 状态顺延到下一轮：标题加上限后缀，
+      文件行列出顺延数，并附一行「说明」。顺延不影响消息级别。
     """
     kind = kind or ("sync_run" if data.get("kind") == "sync_run" else "folder")
     emoji, title, name_label = _BATCH_TITLES[(kind, failed)]
     name = _pick(data, "name")
     dst = _pick(data, "target_path")
-    drives = _drive_pair(data)
+    drives = _batch_drive_pair(data, kind)
     total = _pick(data, "total_files")
     success = data.get("success_count") or 0
     failed_count = data.get("failed_count") or 0
-    skipped = (data.get("skipped_count") or 0) + (data.get("skipped_existing") or 0)
+    deferred = data.get("deferred_count") or 0
+    skipped = data.get("skipped_count") or 0
+    cancelled = data.get("cancelled_count") or 0
+    # skipped_existing：目标已存在、未建任务的文件，不计入 total_files
+    skipped_existing = data.get("skipped_existing") or 0
     size = _pick(data, "success_bytes")
+
+    if deferred:
+        title += _deferred_suffix(data)
 
     fields: List[Tuple[str, str]] = []
     if name:
@@ -176,12 +264,29 @@ def _format_batch(data: Dict[str, Any], failed: bool = False, kind: Optional[str
     if drives:
         fields.append(("网盘", drives))
     if total is not None:
-        counts = f"成功 {success} · 失败 {failed_count} · 共 {total}"
+        counts = f"成功 {success} · 失败 {failed_count}"
+        if deferred:
+            counts += f" · 顺延 {deferred}"
         if skipped:
-            counts += f"（另跳过 {skipped}）"
+            counts += f" · 跳过 {skipped}"
+        if cancelled:
+            counts += f" · 取消 {cancelled}"
+        counts += f" · 共 {total}"
+        if skipped_existing:
+            counts += f"（另跳过已存在 {skipped_existing}）"
         fields.append(("文件", counts))
     if size:
-        fields.append(("大小", _fmt_size(size)))
+        size_text = _fmt_size(size)
+        budget = _pick(data, "byte_budget")
+        reasons = _deferred_reasons(data)
+        # 只有流量上限触发（或旧宿主没给原因）时才提示本轮流量上限；仅时长上限时不提
+        if deferred and budget and (not reasons or "bytes" in reasons):
+            size_text += f"（本轮上限 {_fmt_size(budget)}）"
+        fields.append(("大小", size_text))
+    if deferred:
+        deferred_bytes = _pick(data, "deferred_bytes")
+        size_note = f"（{_fmt_size(deferred_bytes)}）" if deferred_bytes else ""
+        fields.append(("说明", f"剩余 {deferred} 个文件{size_note}顺延到下一轮"))
     if failed and data.get("aborted"):
         reason = _pick(data, "error")
         note = f"同步中途出错（{_short(str(reason), 80)}），" if reason else "同步中途出错，"
